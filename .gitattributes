@@ -1,0 +1,4 @@
+*	text eol=lf ident
+*.png	-text
+*.jpg	-text
+*.gif	-text
