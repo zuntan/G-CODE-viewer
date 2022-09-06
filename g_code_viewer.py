@@ -3,7 +3,7 @@
 ### vim:set ts=4 sw=4 sts=0 fenc=utf-8: ###
 
 ###
-### $Id:$
+### $Id$
 ###
 
 """
@@ -1191,7 +1191,6 @@ class Viewer:
     canv_padxy = 8
 
     gcode = None
-    gcode_lns = []
     gcode_fr_map = {}
     gcode_fr_fail = skia.HSVToColor( [ feedrate_color_h_st  * 360, 1, 1 ] )
     gcode_thumbnail = None
@@ -1223,6 +1222,10 @@ class Viewer:
     thread_gl_thread    = None
     thread_gl_th_image  = None
     thread_gl_ptm       = int( 1000 / 8 )
+
+    cgu             = True
+    cgu_target      = {}        # key no, value cg_info
+    cgu_info        = collections.namedtuple( 'cgu_info', ( 'd1', 'd2', 'g_ins' ) )
 
     def __init__( self, **kwargs ):
         self.option = kwargs
@@ -1295,7 +1298,7 @@ class Viewer:
 
         self.root.title( SCRIPT_NAME + title_tail)
 
-        self.gcode = gcode
+        self.gcode = self.customGcodeUpdate( gcode )
 
         self.scale_v.configure( from_ = self.gcode_ln_max(), to = self.gcode_ln_min() )
         self.scale_v_value.set( self.gcode_ln_min() )
@@ -1338,6 +1341,40 @@ class Viewer:
 
         if thumbnail_bytes != None:
             self.gcode_thumbnail = skia.Image.MakeFromEncoded( skia.Data( thumbnail_bytes ) )
+
+    def customGcodeUpdate( self, gcode ):
+
+        if not self.cgu:
+            return gcode
+
+        target_move = {}
+        target_ext  = {}
+
+        for ( ln, ld ) in enumerate( gcode.layer_data ):
+
+            if ld.height > 1.0:
+                for g1 in ld.layer:
+                    if g1.E is not None and g1.E > 0:
+                        if g1.cf < 600:
+                            target_ext.setdefault( ln, [] ).append( g1 )
+                            continue
+
+                    if g1.E is None and g1.X is not None and g1.Y is not None:
+                        target_move.setdefault( ln, [] ).append( g1 )
+
+        for ( ln, layer ) in target_move.items():
+            for g1 in layer:
+
+                p1 = np.array( ( g1.X, g1.Y ) )
+                p0 = np.array( ( g1.cx, g1.cy ) )
+
+                l = np.linalg.norm( p1 - p0 )
+
+                if l > 0.4 * 4 and l < 10:
+                    print( l, g1 )
+#                   cgu_target[] = self.cgu_info( self.customGcode_drawfunc1, None, None )
+
+        return gcode
 
     def setupIcons( self ):
         self.icon_zoom_in       = makeTkImage( svgIconRenderer( io.StringIO( ICON_ZOOM_IN ), 24, 24 ) )
