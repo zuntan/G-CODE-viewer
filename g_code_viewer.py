@@ -3,7 +3,7 @@
 ### vim:set ts=4 sw=4 sts=0 fenc=utf-8: ###
 
 ###
-### $Id:$
+### $Id$
 ###
 
 """
@@ -53,7 +53,8 @@ DEFAULT_BED_W = 250
 DEFAULT_BED_H = 210
 DEFAULT_BED_M = 10
 
-FILETYPES = ( ("g-code", "*.gcode"), ("all", "*.*") )
+FILETYPES_GCODE = ( ("g-code", "*.gcode"), ("all", "*.*") )
+FILETYPES_SVG = ( ("svg", "*.svg"), ("all", "*.*") )
 
 def usage( self ):
     pass
@@ -136,8 +137,10 @@ ICON_FILE_TEXT = '''
 </svg>
 '''
 
-ICON_FILE_TEXT = '''
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 18H17V16H7V18Z" fill="currentColor" /><path d="M17 14H7V12H17V14Z" fill="currentColor" /><path d="M7 10H11V8H7V10Z" fill="currentColor" /><path fill-rule="evenodd" clip-rule="evenodd" d="M6 2C4.34315 2 3 3.34315 3 5V19C3 20.6569 4.34315 22 6 22H18C19.6569 22 21 20.6569 21 19V9C21 5.13401 17.866 2 14 2H6ZM6 4H13V9H19V19C19 19.5523 18.5523 20 18 20H6C5.44772 20 5 19.5523 5 19V5C5 4.44772 5.44772 4 6 4ZM15 4.10002C16.6113 4.4271 17.9413 5.52906 18.584 7H15V4.10002Z" fill="currentColor" /></svg>
+ICON_FILE_SVG = '''
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-filetype-svg" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M14 4.5V14a2 2 0 0 1-2 2v-1a1 1 0 0 0 1-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5L14 4.5ZM0 14.841a1.13 1.13 0 0 0 .401.823c.13.108.288.192.478.252.19.061.411.091.665.091.338 0 .624-.053.858-.158.237-.105.416-.252.54-.44a1.17 1.17 0 0 0 .187-.656c0-.224-.045-.41-.135-.56a1 1 0 0 0-.375-.357 2.027 2.027 0 0 0-.565-.21l-.621-.144a.97.97 0 0 1-.405-.176.37.37 0 0 1-.143-.299c0-.156.061-.284.184-.384.125-.101.296-.152.513-.152.143 0 .266.023.37.068a.625.625 0 0 1 .245.181.56.56 0 0 1 .12.258h.75a1.092 1.092 0 0 0-.199-.566 1.21 1.21 0 0 0-.5-.41 1.813 1.813 0 0 0-.78-.152c-.293 0-.552.05-.776.15-.225.099-.4.24-.528.421-.127.182-.19.395-.19.639 0 .201.04.376.123.524.082.149.199.27.351.367.153.095.332.167.54.213l.618.144c.207.049.36.113.462.193a.387.387 0 0 1 .153.326.512.512 0 0 1-.085.29.559.559 0 0 1-.256.193c-.111.047-.249.07-.413.07-.117 0-.224-.013-.32-.04a.837.837 0 0 1-.248-.115.578.578 0 0 1-.255-.384H0Zm4.575 1.09h.952l1.327-3.999h-.879l-.887 3.138H5.05l-.897-3.138h-.917l1.339 4Zm5.483-3.293c.076.152.123.316.14.492h-.776a.797.797 0 0 0-.096-.249.689.689 0 0 0-.17-.19.707.707 0 0 0-.237-.126.963.963 0 0 0-.3-.044c-.284 0-.506.1-.664.302-.157.2-.235.484-.235.85v.497c0 .235.033.44.097.616a.881.881 0 0 0 .305.413.87.87 0 0 0 .518.146.965.965 0 0 0 .457-.097.67.67 0 0 0 .273-.263c.06-.11.09-.23.09-.364v-.254h-.823v-.59h1.576v.798c0 .193-.032.377-.096.55a1.29 1.29 0 0 1-.293.457 1.37 1.37 0 0 1-.495.314c-.198.074-.43.111-.698.111a1.98 1.98 0 0 1-.752-.132 1.447 1.447 0 0 1-.534-.377 1.58 1.58 0 0 1-.319-.58 2.482 2.482 0 0 1-.105-.745v-.507c0-.36.066-.677.199-.949.134-.271.329-.482.583-.633.256-.152.564-.228.926-.228.238 0 .45.033.635.1.188.066.348.158.48.275.134.117.238.253.314.407Z"/>
+</svg>
 '''
 
 ICON_PLAYER_PLAY = '''
@@ -773,6 +776,7 @@ def svgIconRenderer( filename_or_strem, view_w = 16, view_h = 16, color = 0xFF00
 
         def endDocument( self ):
             self.skc.flush()
+            del self.skc
 
     h = handler( view_w, view_h, color );
     p = xml.sax.parse( filename_or_strem, h )
@@ -1238,7 +1242,7 @@ class Viewer:
 
     def gcode_li_max( self ):
         try:
-            return len( self.gcode.layer_data[ self.gcode_ln() ].layer )
+            return len( self.gcode.layer_data[ self.gcode_ln() ].layer ) - 1
         except IndexError:
             return 0
 
@@ -1350,6 +1354,7 @@ class Viewer:
         self.icon_backword      = makeTkImage( svgIconRenderer( io.StringIO( ICON_BACKWORD ), 24, 24 ) )
         self.icon_backword_skip = makeTkImage( svgIconRenderer( io.StringIO( ICON_BACKWORD_SKIP ), 24, 24 ) )
         self.icon_file_text     = makeTkImage( svgIconRenderer( io.StringIO( ICON_FILE_TEXT ), 24, 24 ) )
+        self.icon_file_svg      = makeTkImage( svgIconRenderer( io.StringIO( ICON_FILE_SVG ), 24, 24 ) )
         self.icon_player_play   = makeTkImage( svgIconRenderer( io.StringIO( ICON_PLAYER_PLAY ), 24, 24 ) )
         self.icon_player_pause  = makeTkImage( svgIconRenderer( io.StringIO( ICON_PLAYER_PAUSE ), 24, 24 ) )
         self.icon_config        = makeTkImage( svgIconRenderer( io.StringIO( ICON_CONFIIG ), 24, 24 ) )
@@ -1393,6 +1398,11 @@ class Viewer:
         self.chk_lg_value.set( 1 )
         self.chk_lg = ttk.Checkbutton( self.config_frame, text="show legend", style="Custom.TCheckbutton", command = self.onChange_chk_lg, variable=self.chk_lg_value )
         self.chk_lg.pack( anchor=tk.W )
+
+        self.chk_dt_value = tk.IntVar()
+        self.chk_dt_value.set( 1 )
+        self.chk_dt = ttk.Checkbutton( self.config_frame, text="show detail", style="Custom.TCheckbutton", command = self.onChange_chk_dt, variable=self.chk_dt_value )
+        self.chk_dt.pack( anchor=tk.W )
 
         self.chk_th_value = tk.IntVar()
         self.chk_th_value.set( 1 )
@@ -1525,6 +1535,8 @@ class Viewer:
         self.cbo_pl.set( self.cbo_pl.cget( "values" )[1] )
 
         self.btn_cfg = ttk.Button( self.stat_bar, image = self.icon_config, width=3, command = self.onButton_btn_cfg )
+
+        self.btn_out = ttk.Button( self.stat_bar, image=self.icon_file_svg, width=5, command = self.onButton_btn_out )
         self.btn_op = ttk.Button( self.stat_bar, image=self.icon_file_text, width=5, command = self.onButton_btn_open )
 
         ttk.Frame( self.stat_bar, width=6 ).pack( side = tk.LEFT )
@@ -1545,9 +1557,12 @@ class Viewer:
         self.btn_cfg.pack( side = tk.LEFT )
 
         ttk.Frame( self.stat_bar, width=8).pack( side = tk.LEFT )
-        self.btn_op.pack( side = tk.LEFT )
-        ttk.Frame( self.stat_bar, width=8).pack( side = tk.LEFT )
+        self.btn_out.pack( side = tk.LEFT )
 
+        ttk.Frame( self.stat_bar, width=8).pack( side = tk.LEFT )
+        self.btn_op.pack( side = tk.LEFT )
+
+        ttk.Frame( self.stat_bar, width=8).pack( side = tk.LEFT )
         ttk.Sizegrip( self.stat_bar ).pack( side = tk.RIGHT, fill=tk.Y )
 
         self.stat_bar.pack( side = tk.BOTTOM, fill=tk.X )
@@ -1556,9 +1571,9 @@ class Viewer:
         # event bind
 
         self.canv.bind( "<Configure>",          self.onResize )
-        self.canv.bind( "<ButtonPress-1>",      self.scrollStart )
-        self.canv.bind( "<B1-Motion>",          self.scrollMove )
-        self.canv.bind( "<ButtonRelease-1>",    self.scrollEnd )
+        self.canv.bind( "<ButtonPress-3>",      self.scrollStart )
+        self.canv.bind( "<B3-Motion>",          self.scrollMove )
+        self.canv.bind( "<ButtonRelease-3>",    self.scrollEnd )
         self.canv.bind( "<MouseWheel>",         self.zoomInOut )
 
         self.config_frame.bind( "<Configure>", self.onResizeConfig )
@@ -1647,19 +1662,11 @@ class Viewer:
 
         # label update
 
-        g1 = self.gcode_lnli( self.gcode_ln(), self.gcode_li() )
-
-        msg = ""
-
-        if g1 is not None:
-            msg = "FR:%.1f TM:%s Lno:%d" % ( g1.cf / 60, format_time( g1.tm * self.gcode.time_diff_rate ) , g1.no + 1 )
-
-        msg = "L:%d/%d (%.2fmm/%.2fmm) I:%d/%d %s" % (
+        msg = "L:%d/%d (%.2fmm/%.2fmm) I:%d/%d" % (
                     self.gcode_ln(), self.gcode_ln_max()
                 ,   self.gcode_layer_height( self.gcode_ln() )
                 ,   self.gcode_layer_height( -1 )
                 ,   self.gcode_li() + 1, self.gcode_li_max() + 1
-                ,   msg
                 )
 
         self.label.configure( text = msg )
@@ -1745,11 +1752,12 @@ class Viewer:
 
             target.set( new_first, new_last )
 
-    def updateImage( self ):
+    def updateImage( self, canvas = None ):
         canv_wh = self.canvAreaSize()
 
-        if self.surface is None or self.surface.shape != ( canv_wh.Y, canv_wh.X, 4 ):
-            self.surface = np.zeros( ( canv_wh.Y, canv_wh.X, 4 ), dtype = np.uint8 )   # Remake surface
+        if canvas == None:
+            if self.surface is None or self.surface.shape != ( canv_wh.Y, canv_wh.X, 4 ):
+                self.surface = np.zeros( ( canv_wh.Y, canv_wh.X, 4 ), dtype = np.uint8 )   # Remake surface
 
         bed_o = self.bedOuter()
         bed_t = Point( self.bed_w, self.bed_h )
@@ -1760,359 +1768,457 @@ class Viewer:
         ( h_offset_f, h_offset_l ) = self.bar_h.get()
         ( v_offset_f, v_offset_l ) = self.bar_v.get()
 
-        with skia.Surface( self.surface ) as skc:
-            # matrix setup
-            mtx = matrix_tran( 0, 0 )
+        if canvas == None:
+            skc = skia.Surface( self.surface ).getCanvas()
+        else:
+            skc = canvas
 
-            for _mtx in (
-                    matrix_scale( self.zoom, -self.zoom )
-                ,   matrix_tran( bed_h.X * self.zoom, canv_wh.Y - bed_h.Y * self.zoom )
-                ,   matrix_tran( -draw_wh.X * h_offset_f, draw_wh.Y * ( 1 - v_offset_l )  )
-                ,   matrix_tran(
-                        ( canv_wh.X - draw_wh.X ) / 2 * ( 1 if ( h_offset_l - h_offset_f ) == 1 else 0 )
-                    ,   -( canv_wh.Y - draw_wh.Y ) / 2 * ( 1 if ( v_offset_l - v_offset_f ) == 1 else 0 )
-                    )
-                ):
-                mtx = np.dot( _mtx, mtx )
+        # matrix setup
+        mtx = matrix_tran( 0, 0 )
 
-            def coordXY( x, y = None ):
-                if y is None:
-                    return coordXY( x[0], x[1] )
+        for _mtx in (
+                matrix_scale( self.zoom, -self.zoom )
+            ,   matrix_tran( bed_h.X * self.zoom, canv_wh.Y - bed_h.Y * self.zoom )
+            ,   matrix_tran( -draw_wh.X * h_offset_f, draw_wh.Y * ( 1 - v_offset_l )  )
+            ,   matrix_tran(
+                    ( canv_wh.X - draw_wh.X ) / 2 * ( 1 if ( h_offset_l - h_offset_f ) == 1 else 0 )
+                ,   -( canv_wh.Y - draw_wh.Y ) / 2 * ( 1 if ( v_offset_l - v_offset_f ) == 1 else 0 )
+                )
+            ):
+            mtx = np.dot( _mtx, mtx )
 
-                return Point.fromNdarray( np.dot( mtx, np.array( ( x, y, 1 ) ) ) )
+        def coordXY( x, y = None ):
+            if y is None:
+                return coordXY( x[0], x[1] )
 
-            # clear
+            return Point.fromNdarray( np.dot( mtx, np.array( ( x, y, 1 ) ) ) )
 
-            skc.clear( 0x00000000 )
+        # clear
 
-            # bed grid draw
+        skc.clear( 0x00000000 )
 
-            skc.save()
+        # bed grid draw
 
-            skc.translate( 0, 0 )
-            skc.scale( 1, 1 )
+        skc.save()
 
-            a0 = skia.Paint( Color=self.bed_color, AntiAlias=True )
+        skc.translate( 0, 0 )
+        skc.scale( 1, 1 )
 
-            a1 = skia.Paint( Color=0xff33ff33, AntiAlias=False, StrokeWidth=2, Style=skia.Paint.kStroke_Style )
+        a0 = skia.Paint( Color=self.bed_color, AntiAlias=True )
 
-            a2 = skia.Paint( Color=0xff33ff33, AntiAlias=True )
-            f2 = skia.Font( None, 13.5 if self.zoom >= ZOOM_DEFAULT else 13.5 * self.zoom / ZOOM_DEFAULT )
+        a1 = skia.Paint( Color=0xff33ff33, AntiAlias=False, StrokeWidth=2, Style=skia.Paint.kStroke_Style )
 
-            a3 = skia.Paint( Color=0xffaaaaaa, AntiAlias=False, StrokeWidth=1, Style=skia.Paint.kStroke_Style )
+        a2 = skia.Paint( Color=0xff33ff33, AntiAlias=True )
+        f2 = skia.Font( None, 13.5 if self.zoom >= ZOOM_DEFAULT else 13.5 * self.zoom / ZOOM_DEFAULT )
 
-            p0 = coordXY( self.bed_m * -1, bed_t.Y + self.bed_m )
-            p1 = coordXY( bed_t.X + self.bed_m, self.bed_m * -1 )
+        a3 = skia.Paint( Color=0xffaaaaaa, AntiAlias=False, StrokeWidth=1, Style=skia.Paint.kStroke_Style )
 
-            bed_rect = skia.Rect.MakeXYWH( p0.X, p0.Y, p1.X - p0.X, p1.Y - p0.Y )
+        p0 = coordXY( self.bed_m * -1, bed_t.Y + self.bed_m )
+        p1 = coordXY( bed_t.X + self.bed_m, self.bed_m * -1 )
 
-            skc.clipRect( bed_rect )
-            skc.drawRoundRect( bed_rect, 10, 10, a0 )
+        bed_rect = skia.Rect.MakeXYWH( p0.X, p0.Y, p1.X - p0.X, p1.Y - p0.Y )
 
-            p0 = coordXY( self.bed_m * -1, 0 )
-            p1 = coordXY( bed_t.X + self.bed_m, 0 )
-            skc.drawLine( p0, p1, a1 )
+        skc.clipRect( bed_rect )
+        skc.drawRoundRect( bed_rect, 10, 10, a0 )
 
-            p0 = coordXY( 0, self.bed_m * -1 )
-            p1 = coordXY( 0, bed_t.Y + self.bed_m )
-            skc.drawLine( p0, p1, a1 )
+        p0 = coordXY( self.bed_m * -1, 0 )
+        p1 = coordXY( bed_t.X + self.bed_m, 0 )
+        skc.drawLine( p0, p1, a1 )
 
-            fh  = f2.getSpacing()
-            fw0 = f2.measureText( '0' )
+        p0 = coordXY( 0, self.bed_m * -1 )
+        p1 = coordXY( 0, bed_t.Y + self.bed_m )
+        skc.drawLine( p0, p1, a1 )
 
-            p0 = coordXY( 0, 0 )
-            skc.drawString( "0", p0.X - fw0 * 1.2, p0.Y + fh * 0.75, f2, a2 )
+        fh  = f2.getSpacing()
+        fw0 = f2.measureText( '0' )
 
-            tick = list( range( 50, bed_t.X, 50 ) )
+        p0 = coordXY( 0, 0 )
+        skc.drawString( "0", p0.X - fw0 * 1.2, p0.Y + fh * 0.75, f2, a2 )
 
-            if tick[-1] != bed_t.X:
-                tick.append( bed_t.X )
+        tick = list( range( 50, bed_t.X, 50 ) )
 
-            for t in tick:
+        if tick[-1] != bed_t.X:
+            tick.append( bed_t.X )
 
-                p0 = coordXY( t, 0 )
-                p1 = coordXY( t, bed_t.Y )
-                skc.drawLine( p0, p1, a3 )
+        for t in tick:
 
-                fwt = f2.measureText( str( t ) )
-                skc.drawString( str( t ), p0.X - fwt - fw0 * 0.4, p0.Y + fh * 0.75, f2, a2 )
+            p0 = coordXY( t, 0 )
+            p1 = coordXY( t, bed_t.Y )
+            skc.drawLine( p0, p1, a3 )
 
-            tick = list( range( 50, bed_t.Y, 50 ) )
+            fwt = f2.measureText( str( t ) )
+            skc.drawString( str( t ), p0.X - fwt - fw0 * 0.4, p0.Y + fh * 0.75, f2, a2 )
 
-            if tick[-1] != bed_t.Y:
-                tick.append( bed_t.Y )
+        tick = list( range( 50, bed_t.Y, 50 ) )
 
-            for t in tick:
+        if tick[-1] != bed_t.Y:
+            tick.append( bed_t.Y )
 
-                p0 = coordXY( 0, t )
-                p1 = coordXY( bed_t.X, t )
-                skc.drawLine( p0, p1, a3 )
+        for t in tick:
 
-                fwt = f2.measureText( str( t ) )
-                skc.drawString( str( t ), p0.X - fwt - fw0 * 0.4, p0.Y + fh * 0.75, f2, a2 )
+            p0 = coordXY( 0, t )
+            p1 = coordXY( bed_t.X, t )
+            skc.drawLine( p0, p1, a3 )
 
-            skc.restore()
+            fwt = f2.measureText( str( t ) )
+            skc.drawString( str( t ), p0.X - fwt - fw0 * 0.4, p0.Y + fh * 0.75, f2, a2 )
 
-            # move draw prepair
+        skc.restore()
 
-            cr    = 5
-            pa_e  = functools.partial( skia.Paint
-                        ,   Color=0xff990000
-                        ,   AntiAlias=True
-                        ,   StrokeWidth=0.4
-                        ,   Style=skia.Paint.kStroke_Style
-                        ,   StrokeCap=skia.Paint.kRound_Cap
-                        ,   StrokeJoin=skia.Paint.kRound_Join
-                        )
-            pa_e_b_color = 0xcc666666
+        # move draw prepair
 
-            pa_m  = skia.Paint( Color=0xff00cc00, AntiAlias=True, StrokeWidth=1.0, Style=skia.Paint.kStroke_Style )
-            pa_zu = skia.Paint( Color=0xff00ff00, AntiAlias=True )
-            pa_zd = skia.Paint( Color=0xffffffff, AntiAlias=True )
+        cr    = 4
+        pa_e  = functools.partial(
+                    skia.Paint
+                ,   Color=0xff990000
+                ,   AntiAlias=True
+                ,   StrokeWidth=0.4
+                ,   Style=skia.Paint.kStroke_Style
+                ,   StrokeCap=skia.Paint.kRound_Cap
+                ,   StrokeJoin=skia.Paint.kRound_Join
+                )
 
-            d_layer_0   = []    # Use canvas affine transformation
-            d_layer_1   = []    # Use custom affine transformation
+        pa_e2 = skia.Paint( Color=0xffffffff
+                ,   AntiAlias=True
+                ,   StrokeWidth=1
+                ,   Style=skia.Paint.kStroke_Style
+                ,   StrokeCap=skia.Paint.kRound_Cap
+                ,   StrokeJoin=skia.Paint.kRound_Join
+                )
 
-            # prepair current or prev layer
+        pa_e3 = skia.Paint( Color=0xffffffff, AntiAlias=True )
+        pa_e4 = skia.Paint( Color=0xffffffff, AntiAlias=True, StrokeWidth=1.0, Style=skia.Paint.kStroke_Style )
 
-            d_layer_b_opt = self.cbo_ly.get()
-            d_layer_b_ln = 0 if d_layer_b_opt == "Current" else -1 if d_layer_b_opt == "Prev" else None
+        pa_e_b_color = 0xcc666666
 
-            d_point     = []    # [0] : feedrate, [1:] Point
+        pa_m  = skia.Paint( Color=0xff00cc00, AntiAlias=True, StrokeWidth=1.0, Style=skia.Paint.kStroke_Style )
+        pa_m2 = skia.Paint( Color=0xff00ff00, AntiAlias=True, StrokeWidth=2.0, Style=skia.Paint.kStroke_Style )
 
-            def d_point_func_b( feedrate = None ):
-                if len( d_point ) > 0:
-                    if feedrate is None or feedrate != d_point[ 0 ]:
-                        d_layer_0.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, d_point[1:], pa_e( Color = pa_e_b_color ) ) )
-                        )
-                        d_point.clear()
+        pa_zu = skia.Paint( Color=0xff00ff00, AntiAlias=True )
+        pa_zu2 = skia.Paint( Color=0xff00ff00, AntiAlias=True, StrokeWidth=1.0, Style=skia.Paint.kStroke_Style )
 
-            if d_layer_b_ln is not None:
-                layer_b = self.gcode_layer( self.gcode_ln() + d_layer_b_ln )
+        pa_zd = skia.Paint( Color=0xffffff00, AntiAlias=True )
+        pa_zd2 = skia.Paint( Color=0xffffff00, AntiAlias=True, StrokeWidth=1.0, Style=skia.Paint.kStroke_Style )
 
-                for g1 in layer_b:
+        d_layer_0   = []    # Use canvas affine transformation
+        d_layer_1   = []    # Use custom affine transformation
 
-                    if g1.Z is None:
-                        x = g1.X if g1.X is not None else g1.cx
-                        y = g1.Y if g1.Y is not None else g1.cy
+        # prepair current or prev layer
 
-                        if g1.E is not None and g1.E > 0:
+        d_layer_b_opt = self.cbo_ly.get()
+        d_layer_b_ln = 0 if d_layer_b_opt == "Current" else -1 if d_layer_b_opt == "Prev" else None
 
-                            d_point_func_b( g1.cf )
+        d_point     = []    # [0] : feedrate, [1:] Point
 
-                            if len( d_point ) == 0:
-                                d_point.append( g1.cf )
-                                d_point.append( Point( g1.cx, g1.cy ) )
+        def d_point_func_b( feedrate = None ):
+            if len( d_point ) > 0:
+                if feedrate is None or feedrate != d_point[ 0 ]:
+                    d_layer_0.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, d_point[1:], pa_e( Color = pa_e_b_color ) ) ) )
+                    d_point.clear()
 
-                            d_point.append( Point( x, y ) )
-                            continue
+        if d_layer_b_ln is not None:
+            layer_b = self.gcode_layer( self.gcode_ln() + d_layer_b_ln )
 
-                    d_point_func_b()
+            for g1 in layer_b:
 
-                d_point_func_b()
-
-            # prepair current move
-
-            d_point     = []    # [0] : feedrate, [1:] Point
-
-            layer_h = self.gcode_layer_height( self.gcode_ln() )
-            layer   = self.gcode_layer( self.gcode_ln() )
-
-            def d_point_func( feedrate = None ):
-                if len( d_point ) > 0:
-                    if feedrate is None or feedrate != d_point[ 0 ]:
-                        d_layer_0.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, tuple( d_point[1:] ), pa_e( Color = self.feedrateColor( d_point[ 0 ] ) ) ) ) )
-                        d_point.clear()
-
-            for i in range( min( self.gcode_li() + 1, len( layer ) ) ):
-                g1 = layer[ i ]
-
-                if g1.Z is not None:
-                    d_point_func()
-
-                    x = g1.X if g1.X is not None else g1.cx
-                    y = g1.Y if g1.Y is not None else g1.cy
-
-                    if x != g1.cx or y != g1.cy:
-                        d_layer_1.append( DrawFunc( skc.drawLine, ( coordXY( g1.cx, g1.cy ), coordXY( x, y ), pa_e() if g1.E is not None and g1.E > 0 else pa_e() ) ) )
-
-                    d_layer_1.append( DrawFunc( skc.drawCircle, ( coordXY( x, y ), cr, pa_zu if g1.Z > layer_h else pa_zd ) ) )
-
-                else:
+                if g1.Z is None:
                     x = g1.X if g1.X is not None else g1.cx
                     y = g1.Y if g1.Y is not None else g1.cy
 
                     if g1.E is not None and g1.E > 0:
 
-                        d_point_func( g1.cf )
+                        d_point_func_b( g1.cf )
 
                         if len( d_point ) == 0:
                             d_point.append( g1.cf )
                             d_point.append( Point( g1.cx, g1.cy ) )
 
                         d_point.append( Point( x, y ) )
-                        # d_layer_0.append( DrawFunc( skc.drawLine, ( Point( g1.cx, g1.cy ), Point( x, y ), pa_e ) ) )
+                        continue
 
-                    else:
+                d_point_func_b()
+
+            d_point_func_b()
+
+        # prepair current move
+
+        d_point     = []    # [0] : feedrate, [1:] Point
+
+        layer_h = self.gcode_layer_height( self.gcode_ln() )
+        layer   = self.gcode_layer( self.gcode_ln() )
+
+        def d_point_func( feedrate = None ):
+            if len( d_point ) > 0:
+                if feedrate is None or feedrate != d_point[ 0 ]:
+                    p = pa_e( Color = self.feedrateColor( d_point[ 0 ] ) )
+                    d_layer_0.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, tuple( d_point[1:] ), p ) ) )
+                    d_point.clear()
+
+        im2 = len( layer ) - 1
+        im1 = min( self.gcode_li(), im2 )
+
+        for i in range( im1 + 1 ):
+            g1 = layer[ i ]
+
+            if g1.Z is not None:
+                d_point_func()
+
+                x = g1.X if g1.X is not None else g1.cx
+                y = g1.Y if g1.Y is not None else g1.cy
+
+                if x != g1.cx or y != g1.cy:
+                    p = pa_e() if g1.E is not None and g1.E > 0 else pa_e()
+                    d_layer_1.append( DrawFunc( skc.drawLine, ( coordXY( g1.cx, g1.cy ), coordXY( x, y ), p ) ) )
+
+                p = pa_zu if g1.Z > layer_h else pa_zd
+                d_layer_1.append( DrawFunc( skc.drawCircle, ( coordXY( x, y ), cr, p ) ) )
+
+                if i == im1:
+                    p = pa_zu2 if g1.Z > layer_h else pa_zd2
+                    d_layer_1.append( DrawFunc( skc.drawCircle, ( coordXY( x, y ), cr + 2, p ) ) )
+
+            else:
+                x = g1.X if g1.X is not None else g1.cx
+                y = g1.Y if g1.Y is not None else g1.cy
+
+                if g1.E is not None and g1.E > 0:
+
+                    d_point_func( g1.cf )
+
+                    if len( d_point ) == 0:
+                        d_point.append( g1.cf )
+                        d_point.append( Point( g1.cx, g1.cy ) )
+
+                    d_point.append( Point( x, y ) )
+
+                    if i == im1:
                         d_point_func()
-                        d_layer_1.append( DrawFunc( skc.drawLine, ( coordXY( g1.cx, g1.cy ), coordXY( x, y ), pa_m ) ) )
 
-            d_point_func()
+                        if i != im2:
+                            d_layer_1.append( DrawFunc( skc.drawLine, ( coordXY( g1.cx, g1.cy ), coordXY( x, y ), pa_e2 ) ) )
 
-            # move draw ( d_layer_0 )
+                else:
+                    d_point_func()
 
+                    p = pa_m2 if i == im1 else pa_m
+                    d_layer_1.append( DrawFunc( skc.drawLine, ( coordXY( g1.cx, g1.cy ), coordXY( x, y ), p ) ) )
+
+
+                if i == im1:
+
+                    d_layer_1.append( DrawFunc( skc.drawCircle, ( coordXY( x, y ), cr, pa_e3 ) ) )
+                    d_layer_1.append( DrawFunc( skc.drawCircle, ( coordXY( x, y ), cr + 2, pa_e4 ) ) )
+
+        # move draw ( d_layer_0 )
+
+        skc.save()
+
+        skc.setMatrix( skia.Matrix( mtx ) )
+
+        for x in d_layer_0:
+            x[0]( *x[1], **x[2] )
+
+        skc.restore()
+
+        # move draw ( d_layer_1 )
+
+        if self.chk_mv_value.get() == 1:
             skc.save()
+            skc.setMatrix( skia.Matrix() )
 
-            skc.setMatrix( skia.Matrix( mtx ) )
-
-            for x in d_layer_0:
+            for x in d_layer_1:
                 x[0]( *x[1], **x[2] )
 
             skc.restore()
 
-            # move draw ( d_layer_1 )
+        # legend
 
-            if self.chk_mv_value.get() == 1:
-                skc.save()
-                skc.setMatrix( skia.Matrix() )
+        l0 = skia.Paint( Color=self.bed_color, AntiAlias=True )
+        l1 = skia.Paint( Color=self.legend_border_color, AntiAlias=True, StrokeWidth=2, Style=skia.Paint.kStroke_Style )
 
-                for x in d_layer_1:
-                    x[0]( *x[1], **x[2] )
+        l2 = skia.Paint( Color=0xff33ff33, AntiAlias=True )
+        lf2     = skia.Font( None, 13.5 )
+        lf2b    = skia.Font( None, 18 )
 
-                skc.restore()
+        l3 = functools.partial( skia.Paint, Color=0xff333333, AntiAlias=True )
 
-            # legend
+        if self.chk_lg_value.get() != 0:
 
-            l0 = skia.Paint( Color=self.bed_color, AntiAlias=True )
-            l1 = skia.Paint( Color=self.legend_border_color, AntiAlias=True, StrokeWidth=2, Style=skia.Paint.kStroke_Style )
+            # prepair
+            hf_e = 1 if len( self.gcode_fr_map ) > 0 else 0
+            mv_e = 3 if self.chk_mv_value.get() == 1 else 0
 
-            l2 = skia.Paint( Color=0xff33ff33, AntiAlias=True )
-            lf2 = skia.Font( None, 13.5 )
+            h  = len( self.gcode_fr_map ) + hf_e + mv_e
+            dh = lf2.getSize()
+            t_offset = 1.3
 
-            l3 = functools.partial( skia.Paint, Color=0xff333333, AntiAlias=True )
+            ww = 15
 
-            if self.chk_lg_value.get() != 0:
+            fr_fmt0 = "%.1f : "
+            fr_fmt1 = "%d"
 
-                # prepair
-                hf_e = 1 if len( self.gcode_fr_map ) > 0 else 0
-                mv_e = 3 if self.chk_mv_value.get() == 1 else 0
+            wmax0 = 0
+            wmax1 = 0
 
-                h  = len( self.gcode_fr_map ) + hf_e + mv_e
-                dh = lf2.getSize()
-                t_offset = 1.3
+            frs = list( self.gcode_fr_map.keys() )
 
-                ww = 15
+            if len( self.gcode_fr_map ) != 0:
+                wmax0 = max( map( lambda fr : lf2.measureText( fr_fmt0 % ( fr / 60, ) ), frs) )
+                wmax1 = max( map( lambda fr : lf2.measureText( fr_fmt1 % ( fr, ) ), frs  ) )
 
-                fr_fmt0 = "%.1f : "
-                fr_fmt1 = "%d"
+            wmax0 = max( wmax0, lf2.measureText( "mm/s : " ) )
+            wmax1 = max( wmax1, lf2.measureText( "mm/m" ) )
 
-                wmax0 = 0
-                wmax1 = 0
+            cx1 = 10
+            cx2 = 30
 
-                frs = list( self.gcode_fr_map.keys() )
+            wmax2 = cx1 + cx2 + max( wmax0 + wmax1, lf2.measureText( "z-down" ) )
 
-                if len( self.gcode_fr_map ) != 0:
-                    wmax0 = max( map( lambda fr : lf2.measureText( fr_fmt0 % ( fr / 60, ) ), frs) )
-                    wmax1 = max( map( lambda fr : lf2.measureText( fr_fmt1 % ( fr, ) ), frs  ) )
+            # draw
 
-                wmax0 = max( wmax0, lf2.measureText( "mm/s : " ) )
-                wmax1 = max( wmax1, lf2.measureText( "mm/m" ) )
+            skc.save()
 
-                cx1 = 10
-                cx2 = 30
+            skc.translate( self.canv_padxy, self.canv_padxy )
 
-                wmax2 = cx1 + cx2 + max( wmax0 + wmax1, lf2.measureText( "z-down" ) )
+            legend_rect = skia.Rect.MakeWH( wmax2, ( h + 1 ) * dh  )
 
-                # draw
+            skc.clipRect( legend_rect )
+            skc.drawRoundRect( legend_rect, 10, 10, l0 )
+            skc.drawRoundRect( legend_rect.makeInset( 2, 2 ), 10, 10, l1 )
 
-                skc.save()
+            i = 0
 
-                skc.translate( self.canv_padxy, self.canv_padxy )
+            if hf_e > 0:
+                txt = "mm/s : "
+                p0 = Point( cx2 + ( wmax0 ) - lf2.measureText( txt ) , ( i + t_offset  ) * dh )
+                skc.drawString( txt, p0.X, p0.Y, lf2, l2 )
 
-                legend_rect = skia.Rect.MakeWH( wmax2, ( h + 1 ) * dh  )
+                txt = "mm/m"
+                p0 = Point( cx2 + ( wmax0 + wmax1 ) - lf2.measureText( txt ) , ( i + t_offset  ) * dh )
+                skc.drawString( txt, p0.X, p0.Y, lf2, l2 )
+                i += 1
 
-                skc.clipRect( legend_rect )
-                skc.drawRoundRect( legend_rect, 10, 10, l0 )
-                skc.drawRoundRect( legend_rect.makeInset( 2, 2 ), 10, 10, l1 )
+            for fr, clr in self.gcode_fr_map.items():
+                txt = fr_fmt0 % ( fr / 60, )
+                p0 = Point( cx2 + ( wmax0 ) - lf2.measureText( txt ) , ( i + t_offset  ) * dh )
+                skc.drawString( txt, p0.X, p0.Y, lf2, l2 )
 
-                i = 0
+                txt = fr_fmt1 % ( fr, )
+                p0 = Point( cx2 + ( wmax0 + wmax1 ) - lf2.measureText( txt ) , ( i + t_offset  ) * dh )
+                skc.drawString( txt, p0.X, p0.Y, lf2, l2 )
 
-                if hf_e > 0:
-                    txt = "mm/s : "
-                    p0 = Point( cx2 + ( wmax0 ) - lf2.measureText( txt ) , ( i + t_offset  ) * dh )
-                    skc.drawString( txt, p0.X, p0.Y, lf2, l2 )
+                r = skia.Rect.MakeXYWH( cx1, ( i + t_offset - 0.5 ) * dh , ww, dh * 0.3 )
+                skc.drawRoundRect( r, 5, 5, l3( Color=clr ) )
+                i += 1
 
-                    txt = "mm/m"
-                    p0 = Point( cx2 + ( wmax0 + wmax1 ) - lf2.measureText( txt ) , ( i + t_offset  ) * dh )
-                    skc.drawString( txt, p0.X, p0.Y, lf2, l2 )
-                    i += 1
+            if mv_e > 0:
+                p0 = Point( cx2, ( i + t_offset  ) * dh )
+                skc.drawString( "move", p0.X, p0.Y, lf2, l2 )
+                p0 = Point( cx1, ( i + t_offset - 0.3 ) * dh )
+                skc.drawLine( p0.X, p0.Y, p0.X + ww, p0.Y, pa_m )
+                i += 1
 
-                for fr, clr in self.gcode_fr_map.items():
-                    txt = fr_fmt0 % ( fr / 60, )
-                    p0 = Point( cx2 + ( wmax0 ) - lf2.measureText( txt ) , ( i + t_offset  ) * dh )
-                    skc.drawString( txt, p0.X, p0.Y, lf2, l2 )
+                p0 = Point( cx2, ( i + t_offset  ) * dh )
+                skc.drawString( "z-up", p0.X, p0.Y, lf2, l2 )
+                p0 = Point( cx1, ( i + t_offset - 0.3 ) * dh )
+                skc.drawCircle( p0.X + ( ww / 2 ), p0.Y, cr, pa_zu )
+                i += 1
 
-                    txt = fr_fmt1 % ( fr, )
-                    p0 = Point( cx2 + ( wmax0 + wmax1 ) - lf2.measureText( txt ) , ( i + t_offset  ) * dh )
-                    skc.drawString( txt, p0.X, p0.Y, lf2, l2 )
+                p0 = Point( cx2, ( i + t_offset  ) * dh )
+                skc.drawString( "z-down", p0.X, p0.Y, lf2, l2 )
+                p0 = Point( cx1, ( i + t_offset - 0.3 ) * dh )
+                skc.drawCircle( p0.X + ( ww / 2 ), p0.Y, cr, pa_zd )
+                i += 1
 
-                    r = skia.Rect.MakeXYWH( cx1, ( i + t_offset - 0.5 ) * dh , ww, dh * 0.3 )
-                    skc.drawRoundRect( r, 5, 5, l3( Color=clr ) )
-                    i += 1
+            skc.restore()
 
-                if mv_e > 0:
-                    p0 = Point( cx2, ( i + t_offset  ) * dh )
-                    skc.drawString( "move", p0.X, p0.Y, lf2, l2 )
-                    p0 = Point( cx1, ( i + t_offset - 0.3 ) * dh )
-                    skc.drawLine( p0.X, p0.Y, p0.X + ww, p0.Y, pa_m )
-                    i += 1
+        if self.chk_dt_value.get() != 0:
 
-                    p0 = Point( cx2, ( i + t_offset  ) * dh )
-                    skc.drawString( "z-up", p0.X, p0.Y, lf2, l2 )
-                    p0 = Point( cx1, ( i + t_offset - 0.3 ) * dh )
-                    skc.drawCircle( p0.X + ( ww / 2 ), p0.Y, cr, pa_zu )
-                    i += 1
+            g1 = self.gcode_lnli( self.gcode_ln(), self.gcode_li() )
 
-                    p0 = Point( cx2, ( i + t_offset  ) * dh )
-                    skc.drawString( "z-down", p0.X, p0.Y, lf2, l2 )
-                    p0 = Point( cx1, ( i + t_offset - 0.3 ) * dh )
-                    skc.drawCircle( p0.X + ( ww / 2 ), p0.Y, cr, pa_zd )
-                    i += 1
+            text = [
+                ( 'Layer',      '%d /%d'            % ( self.gcode_ln(), self.gcode_ln_max() ) )
+            ,   ( 'Height',     '%.2f /%.2f (mm)'   % ( self.gcode_layer_height( self.gcode_ln() ), self.gcode_layer_height( -1 ) ) )
+            ,   ( 'Index',      '%d /%d'            % ( self.gcode_li() + 1, self.gcode_li_max() + 1 ) )
+            ,   ( 'Feedrate',   '%.1f (mm/s)'       % ( g1.cf / 60, )               if g1 is not None else '' )
+            ,   ( 'Time',       '%s'        % ( format_time( g1.tm * self.gcode.time_diff_rate ), ) if g1 is not None else '' )
+            ,   ( 'LineNo',     '%d'        % ( g1.no + 1, )                if g1 is not None else '' )
+            ]
 
-                skc.restore()
 
-            if self.chk_th_value.get() != 0:
+            ipad  = 8
+            w2 = lf2.measureText( ' : ' )
 
-                skc.save()
+            w = max( map( lambda x : lf2.measureText( x[0] ) + w2 + lf2b.measureText( x[1] ), text ) )
+            dh = lf2b.getSize()
+            h = dh * len( text )
+            t_offset = 1.4
 
-                w = 50
-                h = 50
+            cx1 = ipad
+            cx2 = cx1 + max( map( lambda x : lf2.measureText( x[0] ), text ) )
+            cx3 = cx2 + w2
 
-                ipad = 6
+            skc.save()
 
-                if self.gcode_thumbnail != None:
-                    w = self.gcode_thumbnail.width()
-                    h = self.gcode_thumbnail.height()
+            skc.translate( self.canv_padxy, canv_wh.Y - h - self.canv_padxy - ipad * 2  )
 
-                skc.translate( canv_wh.X - w - self.canv_padxy - ipad * 2, self.canv_padxy  )
+            rect = skia.Rect.MakeWH( w + ipad * 4, h + ipad * 2 )
 
-                rect = skia.Rect.MakeWH( w + ipad * 2, h + ipad * 2 )
+            skc.save()
+            skc.clipRect( rect )
+            skc.drawRoundRect( rect, 10, 10, l0 )
+            skc.drawRoundRect( rect.makeInset( 2, 2 ), 10, 10, l1 )
+
+            for ( i, ( t1, t2 ) ) in enumerate( text ):
+                p0 = Point( cx1, ( i + t_offset  ) * dh )
+                skc.drawString( t1, p0.X, p0.Y, lf2, l2 )
+
+                p0 = Point( cx2, ( i + t_offset  ) * dh )
+                skc.drawString( ' : ', p0.X, p0.Y, lf2, l2 )
+
+                p0 = Point( cx3, ( i + t_offset  ) * dh )
+                skc.drawString( t2, p0.X, p0.Y, lf2b, l2 )
+
+            skc.restore()
+
+            skc.restore()
+
+        if self.chk_th_value.get() != 0:
+
+            skc.save()
+
+            w = 50
+            h = 50
+
+            ipad = 6
+
+            if self.gcode_thumbnail != None:
+                w = self.gcode_thumbnail.width()
+                h = self.gcode_thumbnail.height()
+
+            skc.translate( canv_wh.X - w - self.canv_padxy - ipad * 2, self.canv_padxy  )
+
+            rect = skia.Rect.MakeWH( w + ipad * 2, h + ipad * 2 )
+
+            skc.save()
+            skc.clipRect( rect )
+            skc.drawRoundRect( rect, 10, 10, l0 )
+            skc.drawRoundRect( rect.makeInset( 2, 2 ), 10, 10, l1 )
+            skc.restore()
+
+            if self.gcode_thumbnail != None:
+                rect = rect.makeInset( ipad, ipad )
 
                 skc.save()
                 skc.clipRect( rect )
-                skc.drawRoundRect( rect, 10, 10, l0 )
-                skc.drawRoundRect( rect.makeInset( 2, 2 ), 10, 10, l1 )
+                skc.drawImageRect( self.gcode_thumbnail, rect )
                 skc.restore()
 
-                if self.gcode_thumbnail != None:
-                    rect = rect.makeInset( ipad, ipad )
+        skc.flush()
+        del skc
 
-                    skc.save()
-                    skc.clipRect( rect )
-                    skc.drawImageRect( self.gcode_thumbnail, rect )
-                    skc.restore()
-
-        self.setupCanvasImage()
+        if canvas == None:
+            self.setupCanvasImage()
 
     def scrollStart( self, event ):
         self.scan_mark = Point( event.x, event.y )
@@ -2256,6 +2362,9 @@ class Viewer:
         self.updateImage()
 
     def onChange_chk_lg( self, event = None ):
+        self.updateImage()
+
+    def onChange_chk_dt( self, event = None ):
         self.updateImage()
 
     def onChange_th_lg( self, event = None ):
@@ -2509,10 +2618,41 @@ class Viewer:
             self.thread_gl_th_image = None
 
     def onButton_btn_open( self, event = None ):
-        self.openFile( tkfd.askopenfilename( filetypes = FILETYPES ) )
+        self.openFile( tkfd.askopenfilename( filetypes = FILETYPES_GCODE ) )
 
     def onDropFile( self, event ):
         self.openFile( event.data )
+
+    def onButton_btn_out( self, event = None ):
+
+        self.updatePlayState( False )
+
+        filenames = self.root.tk.splitlist( tkfd.asksaveasfilename( filetypes = FILETYPES_SVG, defaultextension = ".svg" ) )
+
+        if filenames is not None and len( filenames ) > 0:
+            filename = filenames[ 0 ]
+
+            self.updatePlayState( False )
+
+            try:
+                stream = skia.FILEWStream( filename )
+
+                canv_wh = self.canvAreaSize()
+
+                canvas = skia.SVGCanvas.Make( ( canv_wh.X, canv_wh.Y ), stream )
+
+                self.updateImage( canvas )
+
+                del canvas
+
+                stream.flush()
+                del stream
+
+            except Exception as err:
+                traceback.print_exception( err, file=sys.stderr )
+                msg = "File save error.\n[%s]\n%s" % ( filename, err )
+                print( msg, file=sys.stderr )
+                tkmb.showerror( "File save error", msg )
 
     def onButton_btn_test( self, event = None ):
         pass
