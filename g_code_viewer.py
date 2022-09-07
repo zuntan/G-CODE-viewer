@@ -56,12 +56,6 @@ DEFAULT_BED_M = 10
 FILETYPES_GCODE = ( ("g-code", "*.gcode"), ("all", "*.*") )
 FILETYPES_SVG = ( ("svg", "*.svg"), ("all", "*.*") )
 
-def usage( self ):
-    pass
-
-def parse_option( self ):
-    pass
-
 def matrix_tran(tx, ty):
     return np.array([[1, 0, tx],
                      [0, 1, ty],
@@ -1230,6 +1224,9 @@ class Viewer:
 
     def __init__( self, **kwargs ):
         self.option = kwargs
+
+        self.bed_w = self.option.get( "bed_w", self.bed_w )
+        self.bed_h = self.option.get( "bed_h", self.bed_h )
 
     def play_timer_span( self ):
         return self.play_timer_span_dic.get( self.cbo_pl.get() )
@@ -2499,45 +2496,45 @@ class Viewer:
 
         self.updateImage()
 
-    def openFile( self, filename ):
+    def openFile_UI( self, filenames ):
         self.updatePlayState( False )
 
-        filenames = self.root.tk.splitlist( filename )
+        filenames = self.root.tk.splitlist( filenames )
 
         if filenames is not None and len( filenames ) > 0:
-            filename = filenames[ 0 ]
+            self.openFile( filenames[ 0 ] )
 
-            self.updatePlayState( False )
+    def openFile( self, filename ):
+        self.updatePlayState( False )
+        self.root.config( cursor="wait" )
 
-            self.root.config( cursor="wait" )
+        if False:
+            # blocking
 
-            if False:
-                # blocking
+            try:
+                gl = GcodeLoader()
+                gl.load( filename )
+                self.setupGcode( gl, filename )
+                self.updateImage()
 
-                try:
-                    gl = GcodeLoader()
-                    gl.load( filename )
-                    self.setupGcode( gl, filename )
-                    self.updateImage()
+            except Exception as err:
+                self.loadError( err, filename )
 
-                except Exception as err:
-                    self.loadError( err, filename )
+            self.root.config( cursor="" )
 
-                self.root.config( cursor="" )
+        else:
+            # threading
 
-            else:
-                # threading
+            self.loadProgressReposition( filename )
 
-                self.loadProgressReposition( filename )
-
-                self.thread_gl_filename = filename
-                self.thread_gl = GcodeLoader()
-                self.thread_gl_thread = threading.Thread( group=None, target = lambda x : x.load( filename ), args=( self.thread_gl, ) )
-                self.thread_gl_thread.start()
-                self.loadprog_th.delete( 'all' )
-                self.loadprog_th.configure( width = 0, height = 0 )
-                self.thread_gl_th_image = None
-                self.root.after( self.thread_gl_ptm, self.loadProgress )
+            self.thread_gl_filename = filename
+            self.thread_gl = GcodeLoader()
+            self.thread_gl_thread = threading.Thread( group=None, target = lambda x : x.load( filename ), args=( self.thread_gl, ) )
+            self.thread_gl_thread.start()
+            self.loadprog_th.delete( 'all' )
+            self.loadprog_th.configure( width = 0, height = 0 )
+            self.thread_gl_th_image = None
+            self.root.after( self.thread_gl_ptm, self.loadProgress )
 
     def loadError( self, err, filename = "" ):
         traceback.print_exception( err, file=sys.stderr )
@@ -2618,10 +2615,10 @@ class Viewer:
             self.thread_gl_th_image = None
 
     def onButton_btn_open( self, event = None ):
-        self.openFile( tkfd.askopenfilename( filetypes = FILETYPES_GCODE ) )
+        self.openFile_UI( tkfd.askopenfilename( filetypes = FILETYPES_GCODE ) )
 
     def onDropFile( self, event ):
-        self.openFile( event.data )
+        self.openFile_UI( event.data )
 
     def onButton_btn_out( self, event = None ):
 
@@ -2654,24 +2651,80 @@ class Viewer:
                 print( msg, file=sys.stderr )
                 tkmb.showerror( "File save error", msg )
 
-    def onButton_btn_test( self, event = None ):
-        pass
-
     def run( self ):
-        rt = self.root = tkdnd.Tk()
+        self.root = tkdnd.Tk()
 
         self.setupIcons()
         self.setupWindow()
         self.setupGcode( GcodeLoader() )
 
-        rt.wait_visibility()
+        self.root.wait_visibility()
 
         self.updateImage()
 
-        rt.mainloop()
+        if 'open_file' in self.option:
+            self.root.after( 500, self.openFile, self.option[ 'open_file' ] )
+
+        self.root.mainloop()
+
+def usage():
+    print( "", file=sys.stderr )
+    print( SCRIPT_NAME, file=sys.stderr )
+    print( "Usage: %s [-w] [-h]" % ( sys.argv[0], ), file=sys.stderr )
+    print( "  -x : Bed x size (mm) defalt %f" % ( DEFAULT_BED_W, ), file=sys.stderr )
+    print( "  -y : Bed y size (mm) defalt %f" % ( DEFAULT_BED_H, ), file=sys.stderr )
+    print( "  -e : Experimental mode", file=sys.stderr )
+    print( "  -h : Show usage", file=sys.stderr )
+
+def parse_option():
+
+    option = {}
+
+    try:
+        opts, args = getopt.getopt( sys.argv[1:], 'hex:y:')
+
+    except getopt.GetoptError as err:
+        print( err )
+        usage()
+        sys.exit(2)
+
+    else:
+
+        for ( k,v ) in opts:
+
+            if k in ( '-h' ):
+                usage()
+                sys.exit()
+
+            elif k in ( '-e' ):
+                option[ 'experimental' ] = True
+
+            elif k in (  '-x', '-y' ):
+                try:
+                    v = int( v )
+
+                    if v < 0:
+                        raise Exception( "Invalid value for [%s]" % ( k, ) )
+
+                    if k == '-x':
+                        option[ 'bed_w' ] = v
+
+                    elif k == '-y':
+                        option[ 'bed_h' ] = v
+
+                except Exception as err:
+                    print( err, file=sys.stderr )
+                    usage()
+                    sys.exit()
+
+        if len( args ) > 0:
+            option[ 'open_file' ] = args[ 0 ]
+
+    return option
 
 if __name__ == "__main__":
-    viewer = Viewer()
+
+    viewer = Viewer( **parse_option() )
     viewer.run()
 
 # EOF
