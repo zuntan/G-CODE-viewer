@@ -30,6 +30,7 @@ import tkinter              as tk
 import tkinter.ttk          as ttk
 import tkinter.filedialog   as tkfd
 import tkinter.messagebox   as tkmb
+import time
 
 import skia
 import tkinterdnd2 as tkdnd
@@ -56,25 +57,144 @@ DEFAULT_BED_M = 10
 FILETYPES_GCODE = ( ("g-code", "*.gcode"), ("all", "*.*") )
 FILETYPES_SVG = ( ("svg", "*.svg"), ("all", "*.*") )
 
-def matrix_tran(tx, ty):
-    return np.array([[1, 0, tx],
-                     [0, 1, ty],
-                     [0, 0, 1]])
+## vvv Helper class for affine Transfomation and line intersection vvv
 
-def matrix_rot(a):
-    return np.array([[np.cos(a), -np.sin(a), 0],
-                     [np.sin(a),  np.cos(a), 0],
-                     [        0,          0, 1]])
+Point = collections.namedtuple( 'Point', ['X', 'Y'] )
+Point.fromNdarray   = lambda x : Point( x[0], x[1] )
+Point.dot           = lambda p1, p2 : p1[0] * p2[0] + p1[1] * p2[1]
+Point.cross         = lambda p1, p2 : p1[0] * p2[1] - p1[1] * p2[0]
+Point.__add__       = lambda self, other : Point( self[0] + other[0], self[1] + other[1] )
+Point.__sub__       = lambda self, other : Point( self[0] - other[0], self[1] - other[1] )
+Point.__mul__       = lambda self, other : Point( self[0] * other, self[0] * other )
+Point.__matmul__    = lambda self, other : Point.dot( self, other )                         # a @ b
+Point.__truediv__   = lambda self, other : Point( self[0] / other, self[0] / other )
+Point.__pow__       = lambda self, other : Point.cross( self, other )                       # a ** b
+Point.length        = lambda self : math.sqrt( self[0] * self[0] + self[1] * self[1] )
 
-def matrix_shear(mx, my):
-    return np.array([[1, -mx, 0],
-                     [-my, 1, 0],
-                     [0,  0, 1]])
+Matrix = collections.namedtuple( 'Matrix', [ 'scX', 'skX', 'trX', 'skY', 'scY', 'trY', 'pe0', 'pe1', 'pe2' ] )
+Matrix.fromNdarray  = lambda x : Matrix( x[0][0], x[0][1], x[0][2], x[1][0], x[1][1], x[1][2], x[2][0], x[2][1], x[2][2] )
+Matrix.dot          = lambda m1, m2 : Matrix(
+                        m1.scX * m2.scX + m1.skX * m2.skY + m1.trX * m2.pe0
+                    ,   m1.scX * m2.skX + m1.skX * m2.scY + m1.trX * m2.pe1
+                    ,   m1.scX * m2.trX + m1.skX * m2.trY + m1.trX * m2.pe2
 
-def matrix_scale(sx, sy):
-    return np.array([[sx, 0, 0],
-                     [0, sy, 0],
-                     [0,  0, 1]])
+                    ,   m1.skY * m2.scX + m1.scY * m2.skY + m1.trY * m2.pe0
+                    ,   m1.skY * m2.skX + m1.scY * m2.scY + m1.trY * m2.pe1
+                    ,   m1.skY * m2.trX + m1.scY * m2.trY + m1.trY * m2.pe2
+
+                    ,   m1.pe0 * m2.scX + m1.pe1 * m2.skY + m1.pe2 * m2.pe0
+                    ,   m1.pe0 * m2.skX + m1.pe1 * m2.scY + m1.pe2 * m2.pe1
+                    ,   m1.pe0 * m2.trX + m1.pe1 * m2.trY + m1.pe2 * m2.pe2
+                    )
+Matrix.dotPoint     = lambda m, p : Point(
+                        m.scX * p[0] + m.skX * p[1] + m.trX * 1
+                    ,   m.skY * p[0] + m.scY * p[1] + m.trY * 1
+                    )
+Matrix.__matmul__   = lambda self, other : Matrix.dot( self, other ) if isinstance( other, Matrix ) else Matrix.dotPoint( self, other )
+                    # a @ b
+Matrix.tran         = lambda tx, ty : Matrix(
+                        1, 0, tx
+                    ,   0, 1, ty
+                    ,   0, 0, 1
+                    )
+Matrix.rot          = lambda a : Matrix(
+                        math.cos(a), -math.sin(a), 0
+                    ,   math.sin(a),  math.cos(a), 0
+                    ,             0,            0, 1
+                    )
+Matrix.scale        = lambda sx, sy : Matrix(
+                        sx, 0, 0
+                    ,   0, sy, 0
+                    ,   0,  0, 1
+                    )
+Matrix.shear        = lambda mx, my : Matrix(
+                        1, -mx, 0
+                    ,   -my, 1, 0
+                    ,   0,   0, 1
+                    )
+
+def linePointIntersect( p0 : Point, p1 : Point, p : Point ):
+
+    ## http://marupeke296.com/COL_2D_No2_PointToLine.html
+
+    eps = 1.0e-8;
+
+    if p0 == p or p1 == p:
+        return True
+
+    v1 = p1 - p0
+    v2 = p  - p0
+
+    l1 = v1.length()
+    l2 = v2.length()
+
+    if ( v1 / l1 ) @ ( v2 / l2 ) >= 1.0 - eps:
+        if l1 >= l2:
+            return True
+
+    return False
+
+def lineLineIntersect( a1 : Point, a2 : Point, b1 : Point, b2 : Point ):
+
+    ## http://marupeke296.com/COL_2D_No10_SegmentAndSegment.html
+
+    eps = 1.0e-8;
+
+    ret = None
+
+    if a1 == a2:
+        if b1 == b2:
+            if a1 == b1:
+                ret = a1
+
+        elif linePointIntersect( b1, b2, a1 ):
+            ret = a1
+
+    elif b1 == b2:
+        if linePointIntersect( a1, a2, b1 ):
+            ret = b1
+
+    else:
+        v1 = a2 - a1
+        v2 = b2 - b1
+
+        c_v1_v2 = v1.cross( v2 )
+
+        if c_v1_v2 == 0.0:
+
+            tp = []
+
+            if linePointIntersect( b1, b2, a1 ):
+                tp.append( a1 )
+
+            if linePointIntersect( b1, b2, a2 ):
+                tp.append( a2 )
+
+            if linePointIntersect( a1, a2, b1 ):
+                tp.append( b1 )
+
+            if linePointIntersect( a1, a2, b2 ):
+                tp.append( b2 )
+
+            if len( tp ) > 0:
+                tp.sort( key = lambda x : ( x - a1 ).length() )
+                ret = tp[0]
+
+        else:
+            v0 = b1 - a1
+            c_v0_v1 = v0.cross( v1 )
+            c_v0_v2 = v0.cross( v2 )
+
+            t1 = c_v0_v2 / c_v1_v2;
+            t2 = c_v0_v1 / c_v1_v2;
+
+            if t1 >= -eps and t1 <= 1 + eps and t2 >= -eps and t2 <= 1 + eps:
+                ret = a1 + v1 * t1
+
+    return ret
+
+## ^^^ Helper class for affine Transfomation and line intersection ^^^
+
 ICON_ZOOM_IN = '''
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-zoom-in" viewBox="0 0 16 16">
   <path fill-rule="evenodd" d="M6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zM13 6.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/>
@@ -154,9 +274,6 @@ ICON_CLOSE = '''
 '''
 
 #
-
-Point = collections.namedtuple( 'Point', ['X', 'Y'] )
-Point.fromNdarray = lambda x : Point( x[0], x[1] )
 
 DrawFunc = collections.namedtuple( 'DrawFunc', ['f', 'args', 'kwargs'], defaults=( None, (), {} ) )
 
@@ -1222,11 +1339,16 @@ class Viewer:
     thread_gl_th_image  = None
     thread_gl_ptm       = int( 1000 / 8 )
 
+    experiment = None
+
     def __init__( self, **kwargs ):
         self.option = kwargs
 
         self.bed_w = self.option.get( "bed_w", self.bed_w )
         self.bed_h = self.option.get( "bed_h", self.bed_h )
+
+    def isModeExp( self ):
+        return self.option.get( 'experiment', False )
 
     def play_timer_span( self ):
         return self.play_timer_span_dic.get( self.cbo_pl.get() )
@@ -1357,9 +1479,18 @@ class Viewer:
         self.icon_config        = makeTkImage( svgIconRenderer( io.StringIO( ICON_CONFIIG ), 24, 24 ) )
         self.icon_close         = makeTkImage( svgIconRenderer( io.StringIO( ICON_CLOSE ), 16, 16, color = self.legend_border_color ) )
 
+    def close( self ):
+        if self.experiment != None:
+            self.experiment.close()
+
+        self.root.destroy()
+        self.root = None
+
     def setupWindow( self ):
         self.root.geometry( self.option.get( 'WIN_GEOMETRY', '%dx%d' % ( DEFAULT_WIN_WIDTH, DEFAULT_WIN_HEIGHT ) ) )
         self.root.minsize( DEFAULT_WIN_WIDTH_MIN, DEFAULT_WIN_HEIGHT_MIN )
+
+        self.root.protocol( 'WM_DELETE_WINDOW', self.close )
 
         # layout
 
@@ -1771,24 +1902,24 @@ class Viewer:
             skc = canvas
 
         # matrix setup
-        mtx = matrix_tran( 0, 0 )
+        mtx = Matrix.tran( 0, 0 )
 
         for _mtx in (
-                matrix_scale( self.zoom, -self.zoom )
-            ,   matrix_tran( bed_h.X * self.zoom, canv_wh.Y - bed_h.Y * self.zoom )
-            ,   matrix_tran( -draw_wh.X * h_offset_f, draw_wh.Y * ( 1 - v_offset_l )  )
-            ,   matrix_tran(
+                Matrix.scale( self.zoom, -self.zoom )
+            ,   Matrix.tran( bed_h.X * self.zoom, canv_wh.Y - bed_h.Y * self.zoom )
+            ,   Matrix.tran( -draw_wh.X * h_offset_f, draw_wh.Y * ( 1 - v_offset_l )  )
+            ,   Matrix.tran(
                     ( canv_wh.X - draw_wh.X ) / 2 * ( 1 if ( h_offset_l - h_offset_f ) == 1 else 0 )
                 ,   -( canv_wh.Y - draw_wh.Y ) / 2 * ( 1 if ( v_offset_l - v_offset_f ) == 1 else 0 )
                 )
             ):
-            mtx = np.dot( _mtx, mtx )
+            mtx = _mtx @ mtx
 
         def coordXY( x, y = None ):
-            if y is None:
-                return coordXY( x[0], x[1] )
+            if y is not None:
+                return mtx @ Point( x, y )
 
-            return Point.fromNdarray( np.dot( mtx, np.array( ( x, y, 1 ) ) ) )
+            return mtx @ x
 
         # clear
 
@@ -2024,6 +2155,16 @@ class Viewer:
             skc.setMatrix( skia.Matrix() )
 
             for x in d_layer_1:
+                x[0]( *x[1], **x[2] )
+
+            skc.restore()
+
+        if self.experiment != None:
+
+            skc.save()
+            skc.setMatrix( skia.Matrix() )
+
+            for x in self.experiment.makeDraws( skc, coordXY ):
                 x[0]( *x[1], **x[2] )
 
             skc.restore()
@@ -2665,7 +2806,420 @@ class Viewer:
         if 'open_file' in self.option:
             self.root.after( 500, self.openFile, self.option[ 'open_file' ] )
 
+        if self.isModeExp():
+            self.experiment = Experiment( self )
+
         self.root.mainloop()
+
+EXP_ICON_ADD = """
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12ZM12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4Z" fill="currentColor" /><path fill-rule="evenodd" clip-rule="evenodd" d="M13 7C13 6.44772 12.5523 6 12 6C11.4477 6 11 6.44772 11 7V11H7C6.44772 11 6 11.4477 6 12C6 12.5523 6.44772 13 7 13H11V17C11 17.5523 11.4477 18 12 18C12.5523 18 13 17.5523 13 17V13H17C17.5523 13 18 12.5523 18 12C18 11.4477 17.5523 11 17 11H13V7Z" fill="currentColor" /></svg>
+"""
+
+EXP_ICON_REMOVE = """
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 11C7.44772 11 7 11.4477 7 12C7 12.5523 7.44772 13 8 13H16C16.5523 13 17 12.5523 17 12C17 11.4477 16.5523 11 16 11H8Z" fill="currentColor" /><path fill-rule="evenodd" clip-rule="evenodd" d="M23 12C23 18.0751 18.0751 23 12 23C5.92487 23 1 18.0751 1 12C1 5.92487 5.92487 1 12 1C18.0751 1 23 5.92487 23 12ZM21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" fill="currentColor" /></svg>
+"""
+
+class Experiment():
+
+    win_width       = 300
+    win_height      = 200
+
+    layerVar = {}
+
+    default_param_pfr   = 45  # mm/s
+    default_param_dist  = 20
+
+    param_layer = []
+    param_pfr   = 0           # mm/m
+    param_dist  = 0
+
+    calc_lock       = threading.Lock()
+    calc_thread     = None
+    calc_state      = 0
+    calc_progress   = 0
+
+    progress_value  = None
+
+    gcode_info = {}
+
+    def __init__( self, viewer ):
+        self.viewer = viewer
+        self.setupWindow()
+
+    def setupWindow( self ):
+
+        self.icon_add       = makeTkImage( svgIconRenderer( io.StringIO( EXP_ICON_ADD ), 16, 16 ) )
+        self.icon_remove    = makeTkImage( svgIconRenderer( io.StringIO( EXP_ICON_REMOVE ), 16, 16 ) )
+
+        self.root = tk.Toplevel( master=self.viewer.root, width = self.win_width, height = self.win_height )
+        self.root.transient( self.viewer.root )
+        self.root.geometry( "+%d+%d" %
+                (
+                    self.viewer.root.winfo_x() + self.viewer.root.winfo_width()
+                ,   self.viewer.root.winfo_y() + self.viewer.root.winfo_height() - self.win_height
+                )
+            )
+        # self.root.resizable( width=False, height=False )
+        self.root.minsize( width = self.win_width, height = self.win_height )
+        self.root.title( SCRIPT_NAME + " [Experiment]" )
+
+        self.root.protocol( 'WM_DELETE_WINDOW', self.close )
+
+        self.frame = tk.Frame( self.root, padx=2, pady=2, relief=tk.SUNKEN )
+
+        self.layer_lframe = tk.LabelFrame( self.frame, text="Target Layer", padx=2, pady=2 )
+
+        self.layerAdd()
+
+        self.layer_lframe.pack( side=tk.TOP, fill=tk.X, expand=True )
+
+        t_frame = tk.Frame( self.frame, padx=2, pady=2 )
+
+        self.btn_add = ttk.Button( t_frame, image = self.icon_add, command= self.layerAdd )
+        self.btn_add.pack( side=tk.LEFT )
+
+        self.btn_remove = ttk.Button( t_frame, image = self.icon_remove, command= self.layerRemove )
+        self.btn_remove.pack( side=tk.LEFT )
+
+        t_frame.pack( anchor=tk.W )
+
+        tk.Frame( self.frame, height=8 ).pack()
+
+        t_frame = tk.Frame( self.frame, padx=2, pady=2 )
+
+        self.entry_pfr  = tk.Entry( t_frame, width=5, justify=tk.RIGHT )
+        self.entry_pfr.insert( tk.END, str( self.default_param_pfr ) )
+        self.entry_dist = tk.Entry( t_frame, width=5, justify=tk.RIGHT, text="1" )
+        self.entry_dist.insert( tk.END, str( self.default_param_dist ) )
+
+        tk.Label( t_frame, text="Peripheral speed:" )   .grid( column=0, row=0, sticky=( tk.E ) )
+        self.entry_pfr                                  .grid( column=1, row=0, sticky=( tk.E, tk.W ) )
+        tk.Label( t_frame, text="mm/s" )                .grid( column=2, row=0, sticky=( tk.W ) )
+
+        tk.Label( t_frame, text="Distance:" )           .grid( column=0, row=1, sticky=( tk.E ) )
+        self.entry_dist                                 .grid( column=1, row=1, sticky=( tk.E, tk.W ) )
+        tk.Label( t_frame, text="mm" )                  .grid( column=2, row=1, sticky=( tk.W ) )
+
+        t_frame.pack( anchor=tk.W )
+
+        tk.Frame( self.frame, height=8 ).pack()
+
+        t_frame = tk.LabelFrame( self.frame, text="", padx=2, pady=2 )
+
+        self.flgDrawGuide = tk.BooleanVar()
+        rdo_i    = tk.Checkbutton( t_frame, indicatoron=False, text="DrawGuide", variable=self.flgDrawGuide, command=self.on_flgDrawGuide )
+
+        rdo_i.pack( side=tk.LEFT )
+
+        t_frame.pack( anchor=tk.W, fill=tk.X )
+
+        self.frame.pack( side=tk.TOP, fill=tk.X )
+
+        self.progress_value = tk.IntVar()
+        self.progressbar = ttk.Progressbar( self.root, variable=self.progress_value )
+        self.progressbar.pack( side=tk.BOTTOM, fill=tk.X )
+
+    def layerAdd( self ):
+        t_frame = tk.Frame( self.layer_lframe, padx=2, pady=1, relief=tk.SUNKEN )
+
+        ( st_var, ed_var, rdVar ) = ( tk.StringVar(), tk.StringVar(), tk.IntVar() )
+
+        rdVar.set( 1 )
+
+        entry_st = tk.Entry( t_frame, width=5, justify=tk.RIGHT, textvariable=st_var  )
+        entry_ed = tk.Entry( t_frame, width=5, justify=tk.RIGHT, textvariable=ed_var  )
+
+        rdo_i    = tk.Radiobutton( t_frame, indicatoron=False, text="I", width=2, value=1, variable=rdVar )
+        rdo_o    = tk.Radiobutton( t_frame, indicatoron=False, text="O", width=2, value=2, variable=rdVar )
+        rdo_b    = tk.Radiobutton( t_frame, indicatoron=False, text="B", width=2, value=3, variable=rdVar )
+
+        self.layerVar[ t_frame ] = ( st_var, ed_var, rdVar, entry_st, entry_ed, rdo_i )
+
+        tk.Label( t_frame, text="ST:" ).pack( side=tk.LEFT )
+        entry_st.pack( side=tk.LEFT )
+
+        tk.Label( t_frame, text="ED:" ).pack( side=tk.LEFT )
+        entry_ed.pack( side=tk.LEFT )
+
+        tk.Frame( t_frame, width=8 ).pack( side=tk.LEFT )
+
+        rdo_i.pack( side=tk.LEFT )
+        rdo_o.pack( side=tk.LEFT )
+        rdo_b.pack( side=tk.LEFT )
+
+        t_frame.pack( anchor=tk.W )
+
+    def layerRemove( self ):
+        frames = self.layer_lframe.pack_slaves()
+
+        if len( frames ) != 0:
+            t_frame = frames[-1]
+            t_frame.pack_forget()
+
+            del self.layerVar[ t_frame ]
+
+            t_frame.destroy()
+
+    def close( self ):
+
+        with self.calc_lock:
+            self.calc_state = 3
+
+        if self.root is not None:
+            self.root.destroy()
+            self.root = None
+
+        self.viewer.experiment = None
+
+    def on_flgDrawGuide( self ):
+
+        if self.flgDrawGuide.get():
+
+            param = self.prepairParameter()
+
+            self.flgDrawGuide.set( param is not None )
+
+            if param is not None:
+                self.param_layer    = param[0]
+                self.param_pfr      = param[1] * 60
+                self.param_dist     = param[2]
+
+                self.gcode_info.clear()
+
+                self.progress_value.set( 0 )
+
+                with self.calc_lock:
+                    self.calc_state = 0
+
+                self.calc_thread = threading.Thread( group=None, target = self.calc )
+                self.calc_thread.start()
+                self.viewer.root.after( self.viewer.thread_gl_ptm, self.calc_watch )
+        else:
+            if self.calc_thread is not None:
+                with self.calc_lock:
+                    self.calc_state = 3
+
+    def calc_watch( self ):
+
+        with self.calc_lock:
+            calc_state      = self.calc_state
+            calc_progress   = self.calc_progress
+
+        if self.calc_thread.is_alive():
+            self.progress_value.set( calc_progress )
+            self.viewer.root.after( self.viewer.thread_gl_ptm, self.calc_watch )
+
+        else:
+            self.calc_thread.join()
+            self.calc_thread = None
+            self.progress_value.set( 100 if calc_state == 2 else 0 )
+            self.viewer.updateImage()
+
+    def calc( self ):
+        with self.calc_lock:
+            self.calc_state = 1
+            self.calc_progress = 0
+
+            param_pfr   = self.param_pfr
+            param_dist  = self.param_dist
+
+        laylen = max( self.viewer.bed_w, self.viewer.bed_h )
+
+        ln_max = self.viewer.gcode_ln_max() + 1
+
+        gcode_info = {}
+
+        def checkCancel():
+            time.sleep( 0.0001 )
+
+            with self.calc_lock:
+                return ( self.calc_state != 1 )
+
+        for ln in range( ln_max ):
+
+            if checkCancel():
+                return
+
+            with self.calc_lock:
+                self.calc_progress = ( ln / ln_max ) * 100
+
+            layer = self.viewer.gcode.layer_data[ ln ].layer
+
+            pt_0    = None
+            i0      = None
+            o0      = None
+
+            pt      = []
+            extr    = []
+
+            for g1 in layer:
+
+                x = g1.X if g1.X is not None else g1.cx
+                y = g1.Y if g1.Y is not None else g1.cy
+
+                if g1.E is not None and g1.E > 0 and g1.cf <= self.param_pfr:
+
+                    pt.append( np.array( ( ( g1.cx + x ) / 2, ( g1.cy + y ) / 2 ) ) )
+                    extr.append( ( Point( g1.cx, g1.cy ), Point( x, y ) ) )
+
+            if len( pt ) > 0:
+                pt_0 = Point.fromNdarray( np.mean( np.array( pt ), axis = 0 ) )
+
+                i0 = []
+                o0 = []
+
+                print( ln, len( extr ), pt_0 )
+
+                for d in range( 0, 360, 90 ):
+                    p_v = Matrix.rot( np.deg2rad( d ) ) @ Point( 1, 0 )
+
+                    print( p_v )
+
+                    pt_1_t = pt_0 + p_v * laylen
+
+                    extr_t = []
+
+                    for ( p0, p1 ) in extr:
+
+                        p0_v = p0 - pt_0
+                        p1_v = p1 - pt_0
+
+#                       if np.sign( p0_v.cross( p_v ) ) != np.sign( p1_v.cross( p_v ) ):
+                        pt_2_t = lineLineIntersect( pt_0, pt_1_t, p0, p1 )
+
+                        if pt_2_t != None:
+                            pt_2_l = ( pt_2_t - pt_0 ).length()
+                            extr_t.append( ( pt_2_l, pt_2_t, p0, p1 ) )
+
+                    if len( extr_t ) != 0:
+                        extr_t.sort()
+                        i0.append( extr_t[0] )
+                        o0.append( extr_t[-1] )
+
+            gcode_info[ ln ]  = self.GcodeInfo( pt_0, i0, o0 )
+
+        with self.calc_lock:
+            self.calc_state = 2
+            self.gcode_info = gcode_info
+
+    ParamLayer  = collections.namedtuple( 'ParamLayer',     [ 'st', 'ed', 'rd' ] )
+    GcodeInfo   = collections.namedtuple( 'GcodeInfo',      [ 'pt_0', 'i0', 'o0' ] )
+
+    def prepairParameter( self ):
+        param_layer     = []
+        param_pfr       = 0
+        param_dist      = 0
+
+        gcode_info   = {}
+
+        focus_widget = None
+
+        try:
+            try:
+                param_pfr = float( self.entry_pfr.get() )
+
+                if param_dist < 0:
+                    raise
+            except:
+                focus_widget = self.entry_pfr
+                raise Exception( "Invalid value : [Peripheral speed]" )
+
+            try:
+                param_dist = float( self.entry_dist.get() )
+
+                if param_dist < 0:
+                    raise
+            except:
+                focus_widget = self.entry_dist
+                raise Exception( "Invalid value : [Distance]" )
+
+            frames = self.layer_lframe.pack_slaves()
+
+            if len( frames ) == 0:
+                raise Exception( "Not exist : [Target layer]" )
+
+            else:
+                for t_frame in frames:
+                    ( st_var, ed_var, rdVar, entry_st, entry_ed, rdo_i ) = self.layerVar[ t_frame ]
+
+                    st = st_var.get().strip()
+
+                    if st == '':
+                        st = -1
+                    else:
+                        try:
+                            st = int( st )
+                            focus_widget = entry_st
+                        except:
+                            raise Exception( "Invalid value : [ST]" )
+
+                    ed = st_var.get().strip()
+
+                    if ed == '':
+                        ed = -1
+                    else:
+                        try:
+                            ed = int( ed )
+                        except:
+                            focus_widget = entry_ed
+                            raise Exception( "Invalid value : [ED]" )
+
+                    rd = rdVar.get()
+
+                    if rd not in [ 1, 2, 3 ]:
+                        focus_widget = rdo_i
+                        raise Exception( "Not selected : [I][O][B]" )
+
+                    param_layer.append( self.ParamLayer( st, ed, rd ) )
+
+        except Exception as err:
+#            traceback.print_exception( err, file=sys.stderr )
+            msg = "Parameter error.\n%s" % ( err, )
+#            print( msg, file=sys.stderr )
+            tkmb.showerror( "Parameter error", msg )
+
+            if focus_widget is not None:
+                focus_widget.focus()
+
+            return None
+
+        return ( param_layer, param_pfr, param_dist )
+
+#       pl = list( filter( lambda x : ( x.st == -1 or ln >= x.st ) and ( x.ed == -1 or ln <= x.ed ), param_layer ) )
+
+    def makeDraws( self, skc, coordXY ):
+
+        if not self.flgDrawGuide.get():
+            return ()
+
+        with self.calc_lock:
+            if self.calc_state != 2:
+                return ()
+
+        gcode_info = self.gcode_info.get( self.viewer.gcode_ln(), None )
+
+        if gcode_info is None:
+            return ()
+
+        # draw
+
+        drawfunc = []
+
+        pa_c = skia.Paint( Color=0xff00ffff, AntiAlias=True )
+        pa_g = skia.Paint( Color=0xff00ffff, AntiAlias=True, StrokeWidth=2.0, Style=skia.Paint.kStroke_Style )
+
+        if gcode_info.pt_0 is not None:
+            drawfunc.append( DrawFunc( skc.drawCircle, ( coordXY( gcode_info.pt_0 ), 5, pa_c ) ) )
+
+        if gcode_info.o0 is not None:
+
+            pts = tuple( map( lambda x : coordXY( x[1] ), gcode_info.o0 + [ gcode_info.o0[0] ] ) )
+            drawfunc.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, pts, pa_g ) ) )
+
+#       if gcode_info.i0 is not None:
+#           drawfunc.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, tuple( map( lambda x : coordXY( x[2] ), gcode_info.i0 ) ), pa_g ) ) )
+
+        return drawfunc
 
 def usage():
     print( "", file=sys.stderr )
@@ -2673,7 +3227,7 @@ def usage():
     print( "Usage: %s [-w] [-h]" % ( sys.argv[0], ), file=sys.stderr )
     print( "  -x : Bed x size (mm) defalt %f" % ( DEFAULT_BED_W, ), file=sys.stderr )
     print( "  -y : Bed y size (mm) defalt %f" % ( DEFAULT_BED_H, ), file=sys.stderr )
-    print( "  -e : Experimental mode", file=sys.stderr )
+    print( "  -e : Experiment mode", file=sys.stderr )
     print( "  -h : Show usage", file=sys.stderr )
 
 def parse_option():
@@ -2697,7 +3251,7 @@ def parse_option():
                 sys.exit()
 
             elif k in ( '-e' ):
-                option[ 'experimental' ] = True
+                option[ 'experiment' ] = True
 
             elif k in (  '-x', '-y' ):
                 try:
