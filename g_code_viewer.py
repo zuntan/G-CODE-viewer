@@ -31,6 +31,7 @@ import tkinter.ttk          as ttk
 import tkinter.filedialog   as tkfd
 import tkinter.messagebox   as tkmb
 import time
+import copy
 
 import skia
 import tkinterdnd2 as tkdnd
@@ -65,11 +66,11 @@ Point.dot           = lambda p1, p2 : p1[0] * p2[0] + p1[1] * p2[1]
 Point.cross         = lambda p1, p2 : p1[0] * p2[1] - p1[1] * p2[0]
 Point.__add__       = lambda self, other : Point( self[0] + other[0], self[1] + other[1] )
 Point.__sub__       = lambda self, other : Point( self[0] - other[0], self[1] - other[1] )
-Point.__mul__       = lambda self, other : Point( self[0] * other, self[0] * other )
+Point.__mul__       = lambda self, other : Point( self[0] * other, self[1] * other )
 Point.__matmul__    = lambda self, other : Point.dot( self, other )                         # a @ b
-Point.__truediv__   = lambda self, other : Point( self[0] / other, self[0] / other )
+Point.__truediv__   = lambda self, other : Point( self[0] / other, self[1] / other )
 Point.__pow__       = lambda self, other : Point.cross( self, other )                       # a ** b
-Point.length        = lambda self : math.sqrt( self[0] * self[0] + self[1] * self[1] )
+Point.norm          = lambda self : math.sqrt( self[0] * self[0] + self[1] * self[1] )
 
 Matrix = collections.namedtuple( 'Matrix', [ 'scX', 'skX', 'trX', 'skY', 'scY', 'trY', 'pe0', 'pe1', 'pe2' ] )
 Matrix.fromNdarray  = lambda x : Matrix( x[0][0], x[0][1], x[0][2], x[1][0], x[1][1], x[1][2], x[2][0], x[2][1], x[2][2] )
@@ -102,15 +103,16 @@ Matrix.rot          = lambda a : Matrix(
                     ,   math.sin(a),  math.cos(a), 0
                     ,             0,            0, 1
                     )
+Matrix.rot_d        = lambda a : Matrix.rot( math.radians( a ) )
 Matrix.scale        = lambda sx, sy : Matrix(
                         sx, 0, 0
                     ,   0, sy, 0
                     ,   0,  0, 1
                     )
-Matrix.shear        = lambda mx, my : Matrix(
-                        1, -mx, 0
-                    ,   -my, 1, 0
-                    ,   0,   0, 1
+Matrix.skew         = lambda mx, my : Matrix(
+                        1, mx, 0
+                    ,   my, 1, 0
+                    ,   0,  0, 1
                     )
 
 def linePointIntersect( p0 : Point, p1 : Point, p : Point ):
@@ -125,12 +127,11 @@ def linePointIntersect( p0 : Point, p1 : Point, p : Point ):
     v1 = p1 - p0
     v2 = p  - p0
 
-    l1 = v1.length()
-    l2 = v2.length()
+    l1 = v1.norm()
+    l2 = v2.norm()
 
-    if ( v1 / l1 ) @ ( v2 / l2 ) >= 1.0 - eps:
-        if l1 >= l2:
-            return True
+    if l1 >= l2 and ( v1 @ v2 == l1 * l2 ):
+        return True
 
     return False
 
@@ -177,7 +178,7 @@ def lineLineIntersect( a1 : Point, a2 : Point, b1 : Point, b2 : Point ):
                 tp.append( b2 )
 
             if len( tp ) > 0:
-                tp.sort( key = lambda x : ( x - a1 ).length() )
+                tp.sort( key = lambda x : ( x - a1 ).norm() )
                 ret = tp[0]
 
         else:
@@ -1645,9 +1646,9 @@ class Viewer:
         # status bar
 
         self.stat_bar = ttk.Frame( self.root, borderwidth = 2, relief = tk.SUNKEN )
-        self.label  = ttk.Label( self.stat_bar, anchor = tk.W, text="", relief="ridge", padding=( 6,0 ) )
+        self.label  = ttk.Label( self.stat_bar, anchor = tk.W, text="", relief=tk.RIDGE, padding=( 6,0 ) )
 
-        self.lbl_zm  = ttk.Label( self.stat_bar, text="", width=7, relief="ridge", anchor = tk.CENTER )
+        self.lbl_zm  = ttk.Label( self.stat_bar, text="", width=7, relief=tk.RIDGE, anchor = tk.CENTER )
 
         self.btn_zi = ttk.Button( self.stat_bar, image = self.icon_zoom_in,     width=3, command = self.onButton_btn_zi )
         self.btn_zo = ttk.Button( self.stat_bar, image = self.icon_zoom_out,    width=3, command = self.onButton_btn_zo )
@@ -2826,17 +2827,15 @@ class Experiment():
 
     layerVar = {}
 
-    default_param_pfr   = 45  # mm/s
-    default_param_dist  = 20
-
-    param_layer = []
-    param_pfr   = 0           # mm/m
-    param_dist  = 0
+    default_param_pfr           = 45  # mm/s
+    default_param_dist          = 20  # mm
+    default_param_min_travel    = 2   # mm
 
     calc_lock       = threading.Lock()
     calc_thread     = None
     calc_state      = 0
     calc_progress   = 0
+    calc_layer      = 0
 
     progress_value  = None
 
@@ -2889,8 +2888,10 @@ class Experiment():
 
         self.entry_pfr  = tk.Entry( t_frame, width=5, justify=tk.RIGHT )
         self.entry_pfr.insert( tk.END, str( self.default_param_pfr ) )
-        self.entry_dist = tk.Entry( t_frame, width=5, justify=tk.RIGHT, text="1" )
+        self.entry_dist = tk.Entry( t_frame, width=5, justify=tk.RIGHT )
         self.entry_dist.insert( tk.END, str( self.default_param_dist ) )
+        self.entry_min_travel = tk.Entry( t_frame, width=5, justify=tk.RIGHT )
+        self.entry_min_travel.insert( tk.END, str( self.default_param_min_travel ) )
 
         tk.Label( t_frame, text="Peripheral speed:" )   .grid( column=0, row=0, sticky=( tk.E ) )
         self.entry_pfr                                  .grid( column=1, row=0, sticky=( tk.E, tk.W ) )
@@ -2900,14 +2901,18 @@ class Experiment():
         self.entry_dist                                 .grid( column=1, row=1, sticky=( tk.E, tk.W ) )
         tk.Label( t_frame, text="mm" )                  .grid( column=2, row=1, sticky=( tk.W ) )
 
+        tk.Label( t_frame, text="Min Travel:" )         .grid( column=0, row=2, sticky=( tk.E ) )
+        self.entry_min_travel                           .grid( column=1, row=2, sticky=( tk.E, tk.W ) )
+        tk.Label( t_frame, text="mm" )                  .grid( column=2, row=2, sticky=( tk.W ) )
+
         t_frame.pack( anchor=tk.W )
 
         tk.Frame( self.frame, height=8 ).pack()
 
         t_frame = tk.LabelFrame( self.frame, text="", padx=2, pady=2 )
 
-        self.flgDrawGuide = tk.BooleanVar()
-        rdo_i    = tk.Checkbutton( t_frame, indicatoron=False, text="DrawGuide", variable=self.flgDrawGuide, command=self.on_flgDrawGuide )
+        self.flgCalc = tk.BooleanVar()
+        rdo_i    = tk.Checkbutton( t_frame, indicatoron=False, text="Calc", variable=self.flgCalc, command=self.on_flgCalc )
 
         rdo_i.pack( side=tk.LEFT )
 
@@ -2915,16 +2920,25 @@ class Experiment():
 
         self.frame.pack( side=tk.TOP, fill=tk.X )
 
+        t_frame = tk.LabelFrame( self.root, text="", )
+
+        self.progress_status    = tk.StringVar()
+        self.progresslabel = ttk.Label( t_frame, textvariable=self.progress_status, relief=tk.RIDGE, width=10 )
+
         self.progress_value = tk.IntVar()
-        self.progressbar = ttk.Progressbar( self.root, variable=self.progress_value )
-        self.progressbar.pack( side=tk.BOTTOM, fill=tk.X )
+        self.progressbar = ttk.Progressbar( t_frame, variable=self.progress_value )
+
+        self.progresslabel.pack( side=tk.LEFT )
+        self.progressbar.pack( side=tk.LEFT, fill=tk.X, expand=True )
+
+        t_frame.pack( side=tk.BOTTOM, fill=tk.X )
 
     def layerAdd( self ):
         t_frame = tk.Frame( self.layer_lframe, padx=2, pady=1, relief=tk.SUNKEN )
 
         ( st_var, ed_var, rdVar ) = ( tk.StringVar(), tk.StringVar(), tk.IntVar() )
 
-        rdVar.set( 1 )
+        rdVar.set( 2 )
 
         entry_st = tk.Entry( t_frame, width=5, justify=tk.RIGHT, textvariable=st_var  )
         entry_ed = tk.Entry( t_frame, width=5, justify=tk.RIGHT, textvariable=ed_var  )
@@ -2971,144 +2985,17 @@ class Experiment():
 
         self.viewer.experiment = None
 
-    def on_flgDrawGuide( self ):
-
-        if self.flgDrawGuide.get():
-
-            param = self.prepairParameter()
-
-            self.flgDrawGuide.set( param is not None )
-
-            if param is not None:
-                self.param_layer    = param[0]
-                self.param_pfr      = param[1] * 60
-                self.param_dist     = param[2]
-
-                self.gcode_info.clear()
-
-                self.progress_value.set( 0 )
-
-                with self.calc_lock:
-                    self.calc_state = 0
-
-                self.calc_thread = threading.Thread( group=None, target = self.calc )
-                self.calc_thread.start()
-                self.viewer.root.after( self.viewer.thread_gl_ptm, self.calc_watch )
-        else:
-            if self.calc_thread is not None:
-                with self.calc_lock:
-                    self.calc_state = 3
-
-    def calc_watch( self ):
-
-        with self.calc_lock:
-            calc_state      = self.calc_state
-            calc_progress   = self.calc_progress
-
-        if self.calc_thread.is_alive():
-            self.progress_value.set( calc_progress )
-            self.viewer.root.after( self.viewer.thread_gl_ptm, self.calc_watch )
-
-        else:
-            self.calc_thread.join()
-            self.calc_thread = None
-            self.progress_value.set( 100 if calc_state == 2 else 0 )
-            self.viewer.updateImage()
-
-    def calc( self ):
-        with self.calc_lock:
-            self.calc_state = 1
-            self.calc_progress = 0
-
-            param_pfr   = self.param_pfr
-            param_dist  = self.param_dist
-
-        laylen = max( self.viewer.bed_w, self.viewer.bed_h )
-
-        ln_max = self.viewer.gcode_ln_max() + 1
-
-        gcode_info = {}
-
-        def checkCancel():
-            time.sleep( 0.0001 )
-
-            with self.calc_lock:
-                return ( self.calc_state != 1 )
-
-        for ln in range( ln_max ):
-
-            if checkCancel():
-                return
-
-            with self.calc_lock:
-                self.calc_progress = ( ln / ln_max ) * 100
-
-            layer = self.viewer.gcode.layer_data[ ln ].layer
-
-            pt_0    = None
-            i0      = None
-            o0      = None
-
-            pt      = []
-            extr    = []
-
-            for g1 in layer:
-
-                x = g1.X if g1.X is not None else g1.cx
-                y = g1.Y if g1.Y is not None else g1.cy
-
-                if g1.E is not None and g1.E > 0 and g1.cf <= self.param_pfr:
-
-                    pt.append( np.array( ( ( g1.cx + x ) / 2, ( g1.cy + y ) / 2 ) ) )
-                    extr.append( ( Point( g1.cx, g1.cy ), Point( x, y ) ) )
-
-            if len( pt ) > 0:
-                pt_0 = Point.fromNdarray( np.mean( np.array( pt ), axis = 0 ) )
-
-                i0 = []
-                o0 = []
-
-                print( ln, len( extr ), pt_0 )
-
-                for d in range( 0, 360, 90 ):
-                    p_v = Matrix.rot( np.deg2rad( d ) ) @ Point( 1, 0 )
-
-                    print( p_v )
-
-                    pt_1_t = pt_0 + p_v * laylen
-
-                    extr_t = []
-
-                    for ( p0, p1 ) in extr:
-
-                        p0_v = p0 - pt_0
-                        p1_v = p1 - pt_0
-
-#                       if np.sign( p0_v.cross( p_v ) ) != np.sign( p1_v.cross( p_v ) ):
-                        pt_2_t = lineLineIntersect( pt_0, pt_1_t, p0, p1 )
-
-                        if pt_2_t != None:
-                            pt_2_l = ( pt_2_t - pt_0 ).length()
-                            extr_t.append( ( pt_2_l, pt_2_t, p0, p1 ) )
-
-                    if len( extr_t ) != 0:
-                        extr_t.sort()
-                        i0.append( extr_t[0] )
-                        o0.append( extr_t[-1] )
-
-            gcode_info[ ln ]  = self.GcodeInfo( pt_0, i0, o0 )
-
-        with self.calc_lock:
-            self.calc_state = 2
-            self.gcode_info = gcode_info
-
     ParamLayer  = collections.namedtuple( 'ParamLayer',     [ 'st', 'ed', 'rd' ] )
-    GcodeInfo   = collections.namedtuple( 'GcodeInfo',      [ 'pt_0', 'i0', 'o0' ] )
+    ParamCalc   = collections.namedtuple( 'ParamCalc',      [ 'layer', 'pfr', 'dist', 'min_travel' ] )
+    GcodeInfo   = collections.namedtuple( 'GcodeInfo',      [ 'rd', 'ip0', 'op0', 'i0', 'o0', 'i1', 'o1', 'mov' ] )
+    GcodeInfo_1 = collections.namedtuple( 'GcodeInfo_1',    [ 'pt_2', 'p0', 'p1' ] )
+    GcodeInfo_2 = collections.namedtuple( 'GcodeInfo_2',    [ 'i', 'g1', 'p0', 'p1' ] )
 
     def prepairParameter( self ):
         param_layer     = []
         param_pfr       = 0
         param_dist      = 0
+        param_min_travel = 0
 
         gcode_info   = {}
 
@@ -3133,6 +3020,15 @@ class Experiment():
                 focus_widget = self.entry_dist
                 raise Exception( "Invalid value : [Distance]" )
 
+            try:
+                param_min_travel = float( self.entry_min_travel.get() )
+
+                if param_min_travel < 0:
+                    raise
+            except:
+                focus_widget = self.entry_min_travel
+                raise Exception( "Invalid value : [Min Travel]" )
+
             frames = self.layer_lframe.pack_slaves()
 
             if len( frames ) == 0:
@@ -3153,7 +3049,7 @@ class Experiment():
                         except:
                             raise Exception( "Invalid value : [ST]" )
 
-                    ed = st_var.get().strip()
+                    ed = ed_var.get().strip()
 
                     if ed == '':
                         ed = -1
@@ -3163,6 +3059,10 @@ class Experiment():
                         except:
                             focus_widget = entry_ed
                             raise Exception( "Invalid value : [ED]" )
+
+                    if st != -1 and ed != -1 and st > ed:
+                        focus_widget = entry_ed
+                        raise Exception( "Invalid value : [ST] > [ED]" )
 
                     rd = rdVar.get()
 
@@ -3183,13 +3083,362 @@ class Experiment():
 
             return None
 
-        return ( param_layer, param_pfr, param_dist )
+        return self.ParamCalc( param_layer, param_pfr, param_dist, param_min_travel )
 
-#       pl = list( filter( lambda x : ( x.st == -1 or ln >= x.st ) and ( x.ed == -1 or ln <= x.ed ), param_layer ) )
+    def on_flgCalc( self ):
+
+        if self.flgCalc.get():
+
+            param = self.prepairParameter()
+
+            self.flgCalc.set( param is not None )
+
+            if param is not None:
+
+                self.gcode_info.clear()
+
+                self.progress_status.set( "*" )
+                self.progress_value.set( 0 )
+
+                with self.calc_lock:
+                    self.calc_state = 0
+
+                self.calc_thread = threading.Thread( group=None, target = self.calc, args=( param, ) )
+                self.calc_thread.start()
+                self.viewer.root.after( self.viewer.thread_gl_ptm, self.calc_watch )
+        else:
+            if self.calc_thread is not None:
+                with self.calc_lock:
+                    self.calc_state = 3
+
+    def calc_watch( self ):
+
+        with self.calc_lock:
+            calc_state      = self.calc_state
+            calc_progress   = self.calc_progress
+            calc_layer      = self.calc_layer
+
+        if self.calc_thread.is_alive():
+            self.progress_value.set( calc_progress )
+            self.progress_status.set( "Layer:%d" % ( calc_layer, ) )
+
+            self.viewer.root.after( self.viewer.thread_gl_ptm, self.calc_watch )
+
+        else:
+            self.calc_thread.join()
+            self.calc_thread = None
+            self.progress_value.set( 100 if calc_state == 2 else 0 )
+            self.progress_status.set( "Done." if calc_state == 2 else "Canceled" )
+            self.viewer.updateImage()
+
+    def calc( self, param ):
+        with self.calc_lock:
+            self.calc_state = 1
+            self.calc_progress = 0
+            self.calc_layer = 0
+
+            bed_w = self.viewer.bed_w
+            bed_h = self.viewer.bed_h
+
+        ln_dict = {}
+
+        if self.viewer.gcode_ln_max() > 0:
+            for pl in param.layer:
+                st = pl.st if pl.st != -1 else self.viewer.gcode_ln_min()
+                ed = pl.ed if pl.ed != -1 else self.viewer.gcode_ln_max()
+
+                st = min( max( st, self.viewer.gcode_ln_min() ), self.viewer.gcode_ln_max() )
+                ed = min( max( ed, self.viewer.gcode_ln_min() ), self.viewer.gcode_ln_max() )
+
+                for x in range( st, ed + 1 ):
+                    ln_dict.setdefault( x, pl.rd )
+
+        raylen = Point( bed_w, bed_h ).norm()
+
+        raylist = []
+
+        m1 = Matrix.rot_d( 90 )
+        m2 = Matrix.rot_d( -90 )
+
+        for d in range( 0, 360, 1 ):
+            raylist.append( Matrix.rot_d( d ) @ Point( 1, 0 ) )
+
+        ln_max = self.viewer.gcode_ln_max() + 1
+
+        gcode_info = {}
+
+        def checkCancel():
+            time.sleep( 0.0001 )
+
+            with self.calc_lock:
+                return ( self.calc_state != 1 )
+
+        for ( i, ln ) in enumerate( sorted( ln_dict.keys() ) ):
+
+            if checkCancel():
+                return
+
+            with self.calc_lock:
+                self.calc_progress = ( i / len( ln_dict ) ) * 100
+                self.calc_layer = ln
+
+            layer = self.viewer.gcode.layer_data[ ln ].layer
+
+            rd = ln_dict[ ln ]
+
+            ip0     = None
+            op0     = None
+            i0      = None
+            o0      = None
+            i1      = None
+            o1      = None
+
+            ptsx    = 0
+            ptsy    = 0
+            ext     = []
+            mov_t   = []
+
+            # Separate G-Code into Extrude and Move
+            # For extrusion, find the midpoint of the line segment and find the center of the point cloud
+
+            pfr = param.pfr * 60
+
+            for ( i, g1 ) in enumerate( layer ):
+
+                x = g1.X if g1.X is not None else g1.cx
+                y = g1.Y if g1.Y is not None else g1.cy
+
+                p0 = Point( g1.cx, g1.cy )
+                p1 = Point( x, y )
+                v01 = p1 - p0
+
+                if (    g1.E is not None and g1.E > 0 and g1.Z is None
+                    and g1.cf <= pfr
+                    ):
+
+                    p2 = p0 + v01 / 2
+
+                    ptsx += p2.X
+                    ptsy += p2.Y
+
+                    ext.append( ( p0, p1 ) )
+
+                elif (      g1.E is None and g1.Z is None
+                        and v01.norm() > param.min_travel
+                        and i > 0 and i < len( layer )
+                    ):
+
+                    # Check if before and after movement are z hops
+
+                    g1p = layer[ i - 1 ]
+
+                    if ( g1p.E is None and g1p.Z is not None ):
+
+                        mov_t.append( self.GcodeInfo_2( i, g1, p0, p1 ) )
+
+            # From the center of the obtained point cloud, find the intersection of the ray and the extrusion line, and calculate the farthest point and the closest point.
+            # Also find the centers of those points
+
+            if len( ext ) > 0:
+                pt_0 = Point( ptsx / len( ext ), ptsy / len( ext ) )
+
+                i0 = []
+                o0 = []
+
+                pt_2_isx = 0
+                pt_2_isy = 0
+                pt_2_osx = 0
+                pt_2_osy = 0
+
+                for ray in raylist:
+
+                    pt_1 = pt_0 + ray * raylen
+
+                    pt_2_il = 0
+                    pt_2_it = None
+                    pt_2_isx_t = 0
+                    pt_2_isy_t = 0
+
+                    pt_2_ol = 0
+                    pt_2_ot = None
+                    pt_2_osx_t = 0
+                    pt_2_osy_t = 0
+
+                    for ( p0, p1 ) in ext:
+
+                        pt_2 = lineLineIntersect( pt_0, pt_1, p0, p1 )
+
+                        if pt_2 != None:
+
+                            l = ( pt_2 - pt_1 ).norm()
+
+                            if l > pt_2_il:
+                                pt_2_il = l
+                                pt_2_it = self.GcodeInfo_1( pt_2, p0, p1 )
+                                pt_2_isx_t = pt_2.X
+                                pt_2_isy_t = pt_2.Y
+
+                            l = ( pt_2 - pt_0 ).norm()
+
+                            if l > pt_2_ol:
+                                pt_2_ol = l
+                                pt_2_ot = self.GcodeInfo_1( pt_2, p0, p1 )
+                                pt_2_osx_t = pt_2.X
+                                pt_2_osy_t = pt_2.Y
+
+                    if pt_2_it != None:
+                        i0.append( pt_2_it )
+                        pt_2_isx += pt_2_isx_t
+                        pt_2_isy += pt_2_isy_t
+
+                    if pt_2_ot != None:
+                        o0.append( pt_2_ot )
+                        pt_2_osx += pt_2_osx_t
+                        pt_2_osy += pt_2_osy_t
+
+                i1 = []
+                o1 = []
+
+                # Processing with distant point cloud and near point cloud respectively
+
+                for ( src, dest, flag, sx, sy ) in (
+                        ( o0, o1, 1, pt_2_osx, pt_2_osy )
+                    ,   ( i0, i1, -1, pt_2_isx, pt_2_isy )
+                    ):
+
+                    tmp = []
+
+                    # stretch the vector from the center point to the intersection
+                    # The extended point is If the direction of the vector from the center point to the intersection point is reversed (negative stretch), the stretch amount is considered to be 0 and the center point is used.
+
+                    if len( src ) > 0:
+                        pt_0 = Point( sx / len( src ), sy / len( src ) )
+
+                        if flag == 1:
+                            op0     = pt_0
+                        else:
+                            ip0     = pt_0
+
+                        for x in src:
+
+                            v = ( x.pt_2 - pt_0 ) * flag
+
+                            if v.norm() != 0:
+                                v /= v.norm()
+
+#                               v2 = p1 - p0
+#
+#                               if v2.norm() != 0:
+#                                   v2 /= v2.norm()
+#                                   v2_1 = m1 @ v2
+#                                   v2_2 = m2 @ v2
+#
+#                                   v += v2_1 if v @ v2_1 >= 0 else v2_2
+#
+#                                   if v.norm() != 0:
+#                                       v /= v.norm()
+
+                                if v.norm() != 0:
+                                    pt_3 = x.pt_2 + v * param.dist
+
+                                    if ( pt_3 - pt_0 ) @ ( x.pt_2 - pt_0 ) == -1:
+                                        pt_3 = pt_0
+
+                                    tmp.append( pt_3 )
+
+                                else:
+                                    tmp.append( x.pt_2 )        # should not reach
+                            else:
+                                tmp.append( pt_0 )
+
+                    # Omit if neighbors are the same
+
+                    l_tmp = len( tmp )
+
+                    if l_tmp  != 0:
+
+                        tmp2 = [ tmp[ 0 ] ]
+                        t = 0
+
+                        for i in range( 1, l_tmp  + 1 ):
+                            if tmp[ i % l_tmp ] != tmp[ t ]:
+
+                                if ( tmp[ i % l_tmp ] - tmp[ t ] ).norm() >= 2:
+                                    tmp2.append( tmp[ t ] )
+                                    t = i
+
+                        tmp = tmp2
+
+                    # Convert to average value of 5 points
+
+                    l_tmp = len( tmp )
+
+                    if l_tmp  != 0:
+
+                        tmp2 = []
+
+                        for i in range( l_tmp ):
+
+                            p = (   tmp[ ( i - 2 ) % l_tmp ]
+                                +   tmp[ ( i - 1 ) % l_tmp ]
+                                +   tmp[ ( i     ) % l_tmp ]
+                                +   tmp[ ( i + 1 ) % l_tmp ]
+                                +   tmp[ ( i + 2 ) % l_tmp ]
+                                ) / 5
+
+                            tmp2.append( Point( max( 0, min( p.X, bed_w ) ), max( 0, min( p.Y, bed_h ) ) ) )
+
+                        tmp = tmp2
+
+                    dest.extend( tmp )
+
+            mov = []
+
+            for ( i, g1, p0, p1 ) in mov_t:
+
+                v = p1 - p0
+
+                if v.norm() != 0:
+                    v = ( v / v.norm() ) * raylen
+
+                    p1_1 = p0 + ( m1 @ v )
+                    p1_2 = p0 + ( m2 @ v )
+
+                    mt = None
+                    ml = raylen
+
+                    for t1 in ( i1, o1 ) if rd == 3 else ( o1, ) if rd == 2 else ( i1, ):
+
+                        t1len = len( t1 )
+
+                        for j in range( t1len ):
+
+                            p2 = t1[ j ]
+                            p3 = t1[ ( j + 1 ) % t1len ]
+
+                            for p1_3 in ( p1_1, p1_2 ):
+                                p4 = lineLineIntersect( p0, p1_3, p2, p3 )
+
+                                if p4 != None:
+
+                                    l = ( p4 - p0 ).norm()
+
+                                    if l < ml:
+                                        mt = p4
+                                        ml = l
+
+                    if mt != None:
+                        mov.append( self.GcodeInfo_2( i, g1, mt, None ) )
+
+            gcode_info[ ln ]  = self.GcodeInfo( ln_dict[ ln ], ip0, op0, i0, o0, i1, o1, mov )
+
+        with self.calc_lock:
+            self.calc_state = 2
+            self.gcode_info = gcode_info
 
     def makeDraws( self, skc, coordXY ):
 
-        if not self.flgDrawGuide.get():
+        if not self.flgCalc.get():
             return ()
 
         with self.calc_lock:
@@ -3205,19 +3454,49 @@ class Experiment():
 
         drawfunc = []
 
-        pa_c = skia.Paint( Color=0xff00ffff, AntiAlias=True )
-        pa_g = skia.Paint( Color=0xff00ffff, AntiAlias=True, StrokeWidth=2.0, Style=skia.Paint.kStroke_Style )
+        pa_c_i  = skia.Paint( Color=0xffffff00, AntiAlias=True )
+        pa_g_i  = skia.Paint( Color=0xffffff00, AntiAlias=True, StrokeWidth=2.0, Style=skia.Paint.kStroke_Style )
+        pa_c_o  = skia.Paint( Color=0xff00ffff, AntiAlias=True )
+        pa_g_o  = skia.Paint( Color=0xff00ffff, AntiAlias=True, StrokeWidth=2.0, Style=skia.Paint.kStroke_Style )
 
-        if gcode_info.pt_0 is not None:
-            drawfunc.append( DrawFunc( skc.drawCircle, ( coordXY( gcode_info.pt_0 ), 5, pa_c ) ) )
+        pa_m_0  = skia.Paint( Color=0xff000000, AntiAlias=True, StrokeWidth=1.0, Style=skia.Paint.kStroke_Style, PathEffect = skia.DashPathEffect.Make( [5,5],0 ) )
+        pa_m_1  = skia.Paint( Color=0xff00ff00, AntiAlias=True, StrokeWidth=2.0, Style=skia.Paint.kStroke_Style )
+        pa_m_2  = skia.Paint( Color=0xff00ff00, AntiAlias=True, StrokeWidth=1.0, Style=skia.Paint.kStroke_Style )
 
-        if gcode_info.o0 is not None:
+        if gcode_info.rd in ( 1, 3 ):
 
-            pts = tuple( map( lambda x : coordXY( x[1] ), gcode_info.o0 + [ gcode_info.o0[0] ] ) )
-            drawfunc.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, pts, pa_g ) ) )
+#           if gcode_info.ip0 is not None:
+#               drawfunc.append( DrawFunc( skc.drawCircle, ( coordXY( gcode_info.ip0 ), 5, pa_c_i ) ) )
+#
+#           if len( gcode_info.i0 ) != 0:
+#               pts = tuple( map( lambda x : coordXY( x[1] ), gcode_info.i0  + [ gcode_info.i0[0] ] ) ) #
+#               drawfunc.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, pts, pa_g_i ) ) )
 
-#       if gcode_info.i0 is not None:
-#           drawfunc.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, tuple( map( lambda x : coordXY( x[2] ), gcode_info.i0 ) ), pa_g ) ) )
+            if len( gcode_info.i1 ) != 0:
+                pts = tuple( map( lambda x : coordXY( x ), gcode_info.i1  + [ gcode_info.i1[0] ] ) ) #
+                drawfunc.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, pts, pa_g_i ) ) )
+
+        if gcode_info.rd in ( 2, 3 ):
+
+#           if gcode_info.op0 is not None:
+#               drawfunc.append( DrawFunc( skc.drawCircle, ( coordXY( gcode_info.op0 ), 5, pa_c_o ) ) )
+#
+#           if len( gcode_info.o0 ) != 0:
+#               pts = tuple( map( lambda x : coordXY( x[0] ), gcode_info.o0  + [ gcode_info.o0[0] ] ) ) #
+#               drawfunc.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, pts, pa_g_o ) ) )
+
+            if len( gcode_info.o1 ) != 0:
+                pts = tuple( map( lambda x : coordXY( x ), gcode_info.o1  + [ gcode_info.o1[0] ] ) ) #
+                drawfunc.append( DrawFunc( skc.drawPoints, ( skia.Canvas.PointMode.kPolygon_PointMode, pts, pa_g_o ) ) )
+
+        for ( i, g1, mt, _ ) in gcode_info.mov:
+
+            if i > self.viewer.gcode_li():
+                break
+
+            drawfunc.append( DrawFunc( skc.drawLine, ( coordXY( Point( g1.cx, g1.cy ) ), coordXY( Point( g1.X, g1.Y ) ),    pa_m_0 ) ) )
+            drawfunc.append( DrawFunc( skc.drawLine, ( coordXY( Point( g1.cx, g1.cy ) ), coordXY( mt                  ),    pa_m_1 ) ) )
+            drawfunc.append( DrawFunc( skc.drawLine, ( coordXY( mt,                   ), coordXY( Point( g1.X, g1.Y ) ),    pa_m_2 ) ) )
 
         return drawfunc
 
