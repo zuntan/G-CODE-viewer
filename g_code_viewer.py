@@ -944,6 +944,9 @@ def format_time( sec ):
 
 G1code = collections.namedtuple( 'G1code', ( 'X', 'Y', 'Z', 'E', 'F', 'tail', 'cx', 'cy', 'cf', 'no', 'tm', 'tmd' ) )
 
+KW_G1         = re.compile( r"\s*G[01]\s+([^;]+)", re.I )
+KW_G1_PARAM   = re.compile( r"\s*([A-Z])(-?[0-9.]+)", re.I )
+
 def parseG1( ln ):
 
     m = KW_G1.match( ln )
@@ -990,9 +993,6 @@ def parseG1( ln ):
 
     return None
 
-KW_G1         = re.compile( r"\s*G[01]\s+([^;]+)", re.I )
-KW_G1_PARAM   = re.compile( r"\s*([A-Z])(-?[0-9.]+)", re.I )
-
 KW_COMMENT          = re.compile( r"^\s*;" )
 KW_BED_SHAPE        = re.compile( r"^\s*;\s*bed_shape\s*=\s*(.+)", re.I )
 # ; bed_shape = 0x0,250x0,250x210,0x210
@@ -1018,7 +1018,7 @@ class GcodeLoader:
 
     layer_data      = []
     raw_gcode       = []
-    raw_gcode_cm    = []
+    raw_gcode_cm_no = []
 
     feedrates   = []
 
@@ -1062,9 +1062,9 @@ class GcodeLoader:
 
         err  = None
 
-        self.layer_data = []
-        self.raw_gcode      = []
-        self.raw_gcode_cm   = []
+        self.layer_data         = []
+        self.raw_gcode          = []
+        self.raw_gcode_cm_no    = []
 
         self.feedrates = []
 
@@ -1138,7 +1138,7 @@ class GcodeLoader:
             if KW_COMMENT.match( ln ):
 
                 if f_thumb != 1:
-                    self.raw_gcode_cm.append( no )
+                    self.raw_gcode_cm_no.append( no )
 
                 else:       # if f_thumb == 1:
                     m = KW_THUMBNAIL_END.match( ln )
@@ -2828,8 +2828,8 @@ class Experiment():
     layerVar = {}
 
     default_param_pfr           = 45  # mm/s
-    default_param_dist          = 20  # mm
-    default_param_min_travel    = 2   # mm
+    default_param_dist          = 30  # mm
+    default_param_min_travel    = 2.4 # mm
 
     calc_lock       = threading.Lock()
     calc_thread     = None
@@ -2912,9 +2912,15 @@ class Experiment():
         t_frame = tk.LabelFrame( self.frame, text="", padx=2, pady=2 )
 
         self.flgCalc = tk.BooleanVar()
-        rdo_i    = tk.Checkbutton( t_frame, indicatoron=False, text="Calc", variable=self.flgCalc, command=self.on_flgCalc )
+        self.flgCalc.trace( 'w', self.on_flgCalc_Change )
 
-        rdo_i.pack( side=tk.LEFT )
+        self.rdoCalc = tk.Checkbutton( t_frame, indicatoron=False, text="Calc", variable=self.flgCalc, command=self.on_flgCalc, height=1, width=5 )
+        self.rdoCalc.pack( side=tk.LEFT, fill=tk.Y )
+
+        self.btnSave = tk.Button( t_frame, text="Save", command=self.on_btnSave, height=1, width=5 )
+        self.btnSave.pack( side=tk.LEFT, fill=tk.Y )
+
+        self.flgCalc.set( False )
 
         t_frame.pack( anchor=tk.W, fill=tk.X )
 
@@ -3085,6 +3091,65 @@ class Experiment():
 
         return self.ParamCalc( param_layer, param_pfr, param_dist, param_min_travel )
 
+    def on_flgCalc_Change( self, *args ):
+        self.btnSave.configure( state = 'normal' if self.isCalcDone() else 'disabled' )
+
+    def on_btnSave( self ):
+        if not self.isCalcDone():
+            return ()
+
+        filenames = self.root.tk.splitlist( tkfd.asksaveasfilename( filetypes = FILETYPES_GCODE, defaultextension = ".gcode" ) )
+
+        if filenames is not None and len( filenames ) > 0:
+            filename = filenames[ 0 ]
+
+            self.root.config( cursor="wait" )
+
+            g1list = []
+
+            for gcode_info in self.gcode_info.values():
+
+                if gcode_info is not None:
+
+                    for ( _, g1, mt, _ ) in gcode_info.mov:
+
+                        g1list.append( ( g1.no, mt, g1.cf ) )
+
+            g1list.sort()
+
+            raw_gcode_iter = iter( enumerate( self.viewer.gcode.raw_gcode ) )
+
+            try:
+                stream = open( filename, "w" )
+
+                for ( no, mt, cf ) in g1list:
+
+                    for ( i, ln ) in raw_gcode_iter:
+
+                        if i < no:
+                            stream.write( ln )
+                        else:
+                            stream.write( "G1 X%.3f Y%.3f F%d\n" % ( mt.X, mt.Y, cf ) )
+                            stream.write( ln )
+                            break
+
+                for ( _, ln ) in raw_gcode_iter:
+                    stream.write( ln )
+
+                stream.flush()
+                stream.close()
+
+                tkmb.showinfo( "File save", "Ok." )
+
+            except Exception as err:
+                traceback.print_exception( err, file=sys.stderr )
+                msg = "File save error.\n[%s]\n%s" % ( filename, err )
+                print( msg, file=sys.stderr )
+                tkmb.showerror( "File save error", msg )
+
+
+            self.root.config( cursor="" )
+
     def on_flgCalc( self ):
 
         if self.flgCalc.get():
@@ -3111,6 +3176,17 @@ class Experiment():
                 with self.calc_lock:
                     self.calc_state = 3
 
+        self.on_flgCalc_Change()
+
+    def isCalcDone( self ):
+
+        flg = self.flgCalc.get()
+
+        with self.calc_lock:
+            flg = flg and ( self.calc_state == 2 )
+
+        return flg
+
     def calc_watch( self ):
 
         with self.calc_lock:
@@ -3130,6 +3206,8 @@ class Experiment():
             self.progress_value.set( 100 if calc_state == 2 else 0 )
             self.progress_status.set( "Done." if calc_state == 2 else "Canceled" )
             self.viewer.updateImage()
+
+            self.on_flgCalc_Change()
 
     def calc( self, param ):
         with self.calc_lock:
@@ -3438,12 +3516,8 @@ class Experiment():
 
     def makeDraws( self, skc, coordXY ):
 
-        if not self.flgCalc.get():
+        if not self.isCalcDone():
             return ()
-
-        with self.calc_lock:
-            if self.calc_state != 2:
-                return ()
 
         gcode_info = self.gcode_info.get( self.viewer.gcode_ln(), None )
 
