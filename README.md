@@ -2,4 +2,4 @@
 
 ## Requirement
 
-pip install numpy skia-python thinterdnd2 Pillow
+pip install numpy skia-python tkinterdnd2 Pillow
