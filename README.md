@@ -19,9 +19,9 @@ $ wget https://raw.githubusercontent.com/zuntan/G-CODE-viewer/refs/heads/main/3D
 $ python g_code_viewer.py
 ```
 
-- Click <Paper Icon> at the bottom right
+- Click `<Paper Icon>` at the bottom right
 - Select 3DBenchy_0.2mm_PLA_MK3S_2h27m.gcode
   - loading  3DBenchy_0.2mm_PLA_MK3S_2h27m.gcode
-- Click <Play Icon>
+- Click `<Play Icon>`
   - Chenge speed: `[VeryFirst v]`
   - You can zoom in with the mouse wheel
