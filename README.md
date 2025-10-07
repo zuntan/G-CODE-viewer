@@ -25,3 +25,9 @@ $ python g_code_viewer.py
 - Click `<Play Icon>`
   - Chenge speed: `[VeryFirst v]`
   - You can zoom in with the mouse wheel
+
+## Screen Shot
+
+<img src="screenshot_1.png" width="30%" >
+<img src="screenshot_2.png" width="30%" >
+<img src="screenshot_3.png" width="30%" >
